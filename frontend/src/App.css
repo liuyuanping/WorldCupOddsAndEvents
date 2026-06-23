@@ -434,7 +434,7 @@ body {
   background: var(--bg-elevated);
   border-radius: 6px;
   border: 1px solid var(--border);
-  min-height: 120px;
+  min-height: 150px;
   height: 150px;
   overflow-y: auto;
   resize: vertical;
