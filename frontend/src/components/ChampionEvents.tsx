@@ -37,7 +37,22 @@ export default function ChampionEvents() {
       <h3>📰 球队事件</h3>
 
       {/* Fixed height detail area — always visible */}
-      <div className="event-detail-popup">
+      <div
+        className="event-detail-popup"
+        onClick={() => {
+          if (displayEvent?.source_url) {
+            window.open(displayEvent.source_url, "_blank", "noopener");
+          } else if (displayEvent) {
+            // Fallback: search for the event on Polymarket
+            window.open(
+              `https://polymarket.com/search?query=${encodeURIComponent(displayEvent.title)}`,
+              "_blank",
+              "noopener"
+            );
+          }
+        }}
+        title={displayEvent?.source_url ? "点击打开原始链接" : "点击搜索相关新闻"}
+      >
         {displayEvent ? (
           <>
             <div className="popup-header">

@@ -434,9 +434,15 @@ body {
   background: var(--bg-elevated);
   border-radius: 6px;
   border: 1px solid var(--border);
+  min-height: 100px;
   height: 120px;
   overflow-y: auto;
-  flex-shrink: 0;
+  resize: vertical;
+  cursor: pointer;
+}
+
+.event-detail-popup:hover {
+  border-color: var(--accent);
 }
 
 .popup-empty {
