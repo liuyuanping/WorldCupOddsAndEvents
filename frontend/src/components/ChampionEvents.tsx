@@ -29,34 +29,43 @@ export default function ChampionEvents() {
     return [...types].sort();
   }, [events]);
 
+  // Default to first filtered event, or keep selected if still valid
+  const displayEvent = selectedEvent || filteredEvents[0] || null;
+
   return (
     <div className="panel events-panel">
       <h3>📰 球队事件</h3>
 
-      {/* Event Detail Popup */}
-      {selectedEvent && (
-        <div className="event-detail-popup">
-          <div className="popup-header">
-            <span
-              className="popup-severity"
-              style={{ background: SEVERITY_COLORS[selectedEvent.severity] || "#94a3b8" }}
-            >
-              {SEVERITY_LABELS[selectedEvent.severity]}
-            </span>
-            <span className="popup-team" style={{ color: getTeamColor(selectedEvent.team_id) }}>
-              {selectedEvent.team_name}
-            </span>
-            <button className="popup-close" onClick={() => setSelectedEvent(null)}>✕</button>
-          </div>
-          <h4>{selectedEvent.title}</h4>
-          <p className="popup-desc">{selectedEvent.description || "暂无详细描述"}</p>
-          <div className="popup-meta">
-            <span>类型: {selectedEvent.event_type}</span>
-            <span>置信度: {(selectedEvent.confidence * 100).toFixed(0)}%</span>
-            <span>{new Date(selectedEvent.timestamp).toLocaleString("zh-CN")}</span>
-          </div>
-        </div>
-      )}
+      {/* Fixed height detail area — always visible */}
+      <div className="event-detail-popup">
+        {displayEvent ? (
+          <>
+            <div className="popup-header">
+              <span
+                className="popup-severity"
+                style={{ background: SEVERITY_COLORS[displayEvent.severity] || "#94a3b8" }}
+              >
+                {SEVERITY_LABELS[displayEvent.severity]}
+              </span>
+              <span className="popup-team" style={{ color: getTeamColor(displayEvent.team_id) }}>
+                {displayEvent.team_name}
+              </span>
+              {selectedEvent && (
+                <button className="popup-close" onClick={() => setSelectedEvent(null)}>✕</button>
+              )}
+            </div>
+            <h4>{displayEvent.title}</h4>
+            <p className="popup-desc">{displayEvent.description || "暂无详细描述"}</p>
+            <div className="popup-meta">
+              <span>类型: {displayEvent.event_type}</span>
+              <span>置信度: {(displayEvent.confidence * 100).toFixed(0)}%</span>
+              <span>{new Date(displayEvent.timestamp).toLocaleString("zh-CN")}</span>
+            </div>
+          </>
+        ) : (
+          <p className="popup-empty">暂无事件</p>
+        )}
+      </div>
 
       {/* Type filter */}
       <div className="event-filters">
@@ -109,16 +118,13 @@ export default function ChampionEvents() {
                 </span>
                 <span
                   className="event-severity"
-                  style={{
-                    background: SEVERITY_COLORS[evt.severity] || "#94a3b8",
-                  }}
+                  style={{ background: SEVERITY_COLORS[evt.severity] || "#94a3b8" }}
                 >
                   {SEVERITY_LABELS[evt.severity]}
                 </span>
                 <span className="event-date">
                   {new Date(evt.timestamp).toLocaleDateString("zh-CN", {
-                    month: "short",
-                    day: "numeric",
+                    month: "short", day: "numeric",
                   })}
                 </span>
               </div>
