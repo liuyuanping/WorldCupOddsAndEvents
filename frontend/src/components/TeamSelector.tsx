@@ -34,6 +34,9 @@ export default function TeamSelector() {
       <div className="selector-header">
         <h3>🎯 球队选择 ({selectedCount}/{teams.length})</h3>
         <div className="selector-actions">
+          <button className="action-btn" onClick={() => selectTopN(3)}>
+            Top 3
+          </button>
           <button className="action-btn" onClick={() => selectTopN(6)}>
             Top 6
           </button>
