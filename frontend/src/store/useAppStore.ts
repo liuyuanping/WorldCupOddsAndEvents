@@ -51,7 +51,10 @@ interface AppState {
   toggleEventType: (t: string) => void;
 }
 
-const DEFAULT_TEAMS = ["brazil", "france", "england", "argentina", "spain", "germany"];
+const DEFAULT_TEAMS = [
+  "france", "argentina", "spain", "england", "portugal", "germany",
+  "netherlands", "brazil", "usa", "norway", "japan", "morocco",
+];
 
 export const useAppStore = create<AppState>((set, get) => ({
   teams: [],
