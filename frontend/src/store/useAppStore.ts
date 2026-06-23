@@ -1,206 +1,146 @@
-/* ── Chart State (Zustand) ──────────────────────────── */
+/* ── Championship Store (Zustand) ────────────────────── */
 import { create } from "zustand";
 import type {
-  OddsRecord,
-  EventRecord,
-  CorrelationCandidate,
-  DataSourceInfo,
-  InteractionState,
+  TeamProfile,
+  ChampionPrediction,
+  TeamEventData,
+  OddsTrendSeries,
 } from "../types";
 import {
-  fetchOdds,
-  fetchEvents,
-  fetchCorrelations,
-  fetchDataSources,
+  fetchChampionTeams,
+  fetchChampionTrend,
+  fetchChampionEvents,
+  fetchChampionPrediction,
 } from "../api/client";
 
-/* ── Types ──────────────────────────────────────────── */
-
 interface AppState {
-  /* Odds */
-  oddsRecords: OddsRecord[];
-  oddsLoading: boolean;
-  selectedBookmakers: Set<string>;
-  selectedMarket: string;
-  oddsProvider: string;
+  /* Teams */
+  teams: TeamProfile[];
+  teamsLoading: boolean;
+  selectedTeamIds: Set<string>;
+
+  /* Odds trends */
+  oddsTrends: Record<string, OddsTrendSeries>;
+  trendsLoading: boolean;
 
   /* Events */
-  events: EventRecord[];
+  events: TeamEventData[];
   eventsLoading: boolean;
   selectedEventTypes: Set<string>;
-  eventProvider: string;
+  hoveredTeamId: string | null;
+  selectedEvent: TeamEventData | null;
 
-  /* Correlations */
-  correlations: CorrelationCandidate[];
-  correlationsLoading: boolean;
+  /* Prediction */
+  prediction: ChampionPrediction | null;
+  predictionLoading: boolean;
 
-  /* UI */
-  interactionState: InteractionState;
-  selectedCorrelation: CorrelationCandidate | null;
-  timeRange: { start: string; end: string };
-  dataSources: DataSourceInfo[];
+  /* Bookmaker */
+  selectedBookmaker: string;
 
   /* Actions */
-  loadOdds: () => Promise<void>;
+  loadTeams: () => Promise<void>;
+  loadTrends: (teamIds: string[]) => Promise<void>;
   loadEvents: () => Promise<void>;
-  loadCorrelations: () => Promise<void>;
-  loadDataSources: () => Promise<void>;
-  setSelectedBookmakers: (bms: Set<string>) => void;
-  toggleBookmaker: (bm: string) => void;
-  setSelectedMarket: (m: string) => void;
-  setOddsProvider: (p: string) => void;
-  setEventProvider: (p: string) => void;
+  loadPrediction: () => Promise<void>;
+  toggleTeam: (tid: string) => void;
+  setSelectedBookmaker: (bm: string) => void;
+  setHoveredTeam: (tid: string | null) => void;
+  setSelectedEvent: (evt: TeamEventData | null) => void;
   toggleEventType: (t: string) => void;
-  setInteractionState: (s: InteractionState) => void;
-  setSelectedCorrelation: (c: CorrelationCandidate | null) => void;
-  setTimeRange: (r: { start: string; end: string }) => void;
-  hoverEvent: (eventId: string) => void;
-  unhoverEvent: () => void;
-  clickEvent: (eventId: string) => void;
-  clearSelection: () => void;
 }
 
-/* ── Store ──────────────────────────────────────────── */
+const DEFAULT_TEAMS = ["brazil", "france", "england", "argentina", "spain", "germany"];
 
 export const useAppStore = create<AppState>((set, get) => ({
-  /* Default state */
-  oddsRecords: [],
-  oddsLoading: false,
-  selectedBookmakers: new Set(["Pinnacle", "Bet365"]),
-  selectedMarket: "h2h",
-  oddsProvider: "mock_odds",
+  teams: [],
+  teamsLoading: false,
+  selectedTeamIds: new Set(DEFAULT_TEAMS),
+
+  oddsTrends: {},
+  trendsLoading: false,
 
   events: [],
   eventsLoading: false,
   selectedEventTypes: new Set<string>(),
-  eventProvider: "mock_events",
+  hoveredTeamId: null,
+  selectedEvent: null,
 
-  correlations: [],
-  correlationsLoading: false,
+  prediction: null,
+  predictionLoading: false,
 
-  interactionState: { type: "IDLE" },
-  selectedCorrelation: null,
-  timeRange: {
-    start: "2026-06-23T06:00:00Z",
-    end: "2026-06-23T18:00:00Z",
-  },
-  dataSources: [],
+  selectedBookmaker: "Pinnacle",
 
-  /* Load odds data */
-  loadOdds: async () => {
-    set({ oddsLoading: true });
+  loadTeams: async () => {
+    set({ teamsLoading: true });
     try {
-      const state = get();
-      const records: OddsRecord[] = [];
-
-      // Fetch per bookmaker for efficiency
-      for (const bm of state.selectedBookmakers) {
-        const batch = await fetchOdds({
-          provider: state.oddsProvider,
-          bookmaker: bm,
-          market: state.selectedMarket,
-          match_id: "wc2026_eng_fra",
-        });
-        records.push(...batch);
-      }
-
-      set({ oddsRecords: records, oddsLoading: false });
-    } catch (err) {
-      console.error("Failed to load odds:", err);
-      set({ oddsLoading: false });
+      const data = await fetchChampionTeams();
+      set({ teams: data.teams, teamsLoading: false });
+    } catch (e) {
+      console.error("loadTeams failed:", e);
+      set({ teamsLoading: false });
     }
   },
 
-  /* Load events */
+  loadTrends: async (teamIds: string[]) => {
+    set({ trendsLoading: true });
+    try {
+      const bm = get().selectedBookmaker;
+      const data = await fetchChampionTrend({
+        team_ids: teamIds.join(","),
+        bookmaker: bm,
+      });
+      set({ oddsTrends: data.series as Record<string, OddsTrendSeries>, trendsLoading: false });
+    } catch (e) {
+      console.error("loadTrends failed:", e);
+      set({ trendsLoading: false });
+    }
+  },
+
   loadEvents: async () => {
     set({ eventsLoading: true });
     try {
-      const state = get();
-      const records = await fetchEvents({
-        provider: state.eventProvider,
-      });
-      set({ events: records, eventsLoading: false });
-    } catch (err) {
-      console.error("Failed to load events:", err);
+      const data = await fetchChampionEvents({ limit: 200 });
+      set({ events: data.events, eventsLoading: false });
+    } catch (e) {
+      console.error("loadEvents failed:", e);
       set({ eventsLoading: false });
     }
   },
 
-  /* Load correlations */
-  loadCorrelations: async () => {
-    set({ correlationsLoading: true });
+  loadPrediction: async () => {
+    set({ predictionLoading: true });
     try {
-      const state = get();
-      const candidates = await fetchCorrelations({
-        odds_provider: state.oddsProvider,
-        event_provider: state.eventProvider,
-        min_score: 0.2,
-      });
-      set({ correlations: candidates, correlationsLoading: false });
-    } catch (err) {
-      console.error("Failed to load correlations:", err);
-      set({ correlationsLoading: false });
+      const data = await fetchChampionPrediction({ n_simulations: 10000 });
+      set({ prediction: data, predictionLoading: false });
+    } catch (e) {
+      console.error("loadPrediction failed:", e);
+      set({ predictionLoading: false });
     }
   },
 
-  /* Load data sources */
-  loadDataSources: async () => {
-    try {
-      const sources = await fetchDataSources();
-      set({ dataSources: sources });
-    } catch (err) {
-      console.error("Failed to load data sources:", err);
-    }
-  },
-
-  /* Selection actions */
-  setSelectedBookmakers: (bms) => set({ selectedBookmakers: bms }),
-  toggleBookmaker: (bm) => {
-    const next = new Set(get().selectedBookmakers);
-    if (next.has(bm)) {
-      if (next.size > 1) next.delete(bm);
+  toggleTeam: (tid: string) => {
+    const next = new Set(get().selectedTeamIds);
+    if (next.has(tid)) {
+      if (next.size > 1) next.delete(tid);
     } else {
-      next.add(bm);
+      if (next.size < 8) next.add(tid);
     }
-    set({ selectedBookmakers: next });
+    set({ selectedTeamIds: next });
+    // Reload trend for selected teams
+    get().loadTrends([...next]);
   },
-  setSelectedMarket: (m) => set({ selectedMarket: m }),
-  setOddsProvider: (p) => set({ oddsProvider: p }),
-  setEventProvider: (p) => set({ eventProvider: p }),
-  toggleEventType: (t) => {
+
+  setSelectedBookmaker: (bm: string) => {
+    set({ selectedBookmaker: bm });
+    get().loadTrends([...get().selectedTeamIds]);
+  },
+
+  setHoveredTeam: (tid: string | null) => set({ hoveredTeamId: tid }),
+  setSelectedEvent: (evt: TeamEventData | null) => set({ selectedEvent: evt }),
+  toggleEventType: (t: string) => {
     const next = new Set(get().selectedEventTypes);
     if (next.has(t)) next.delete(t);
     else next.add(t);
     set({ selectedEventTypes: next });
   },
-
-  /* Interaction */
-  setInteractionState: (s) => set({ interactionState: s }),
-  setSelectedCorrelation: (c) => set({ selectedCorrelation: c }),
-  setTimeRange: (r) => set({ timeRange: r }),
-
-  hoverEvent: (eventId) =>
-    set({ interactionState: { type: "EVENT_HOVER", eventId } }),
-  unhoverEvent: () =>
-    set((s) =>
-      s.interactionState.type === "EVENT_HOVER"
-        ? { interactionState: { type: "IDLE" } }
-        : {}
-    ),
-  clickEvent: (eventId) => {
-    const corrs = get().correlations.filter((c) => c.event_id === eventId);
-    set({
-      interactionState: {
-        type: "DETAIL_PANEL",
-        eventId,
-        correlationIds: corrs.map((c) => c.curve_id),
-      },
-      selectedCorrelation: corrs[0] ?? null,
-    });
-  },
-  clearSelection: () =>
-    set({
-      interactionState: { type: "IDLE" },
-      selectedCorrelation: null,
-    }),
 }));

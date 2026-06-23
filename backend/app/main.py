@@ -12,8 +12,10 @@ from app.config import settings
 from app.database import init_db
 from app.adapters.registry import registry
 from app.adapters.odds.mock_odds_adapter import MockOddsAdapter
+from app.adapters.odds.mock_champion_odds_adapter import MockChampionOddsAdapter
 from app.adapters.events.mock_event_adapter import MockEventAdapter
-from app.api import odds, events, correlations, datasources
+from app.adapters.events.mock_team_event_adapter import MockTeamEventAdapter
+from app.api import odds, events, correlations, datasources, champion
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,9 +30,13 @@ async def lifespan(app: FastAPI):
 
     # Register and enable mock adapters
     registry.register_odds(MockOddsAdapter, "mock_odds")
+    registry.register_odds(MockChampionOddsAdapter, "mock_champion_odds")
     registry.register_event(MockEventAdapter, "mock_events")
+    registry.register_event(MockTeamEventAdapter, "mock_team_events")
     await registry.enable("mock_odds")
+    await registry.enable("mock_champion_odds")
     await registry.enable("mock_events")
+    await registry.enable("mock_team_events")
 
     logger.info("API ready. Providers: %s", registry.get_all_providers())
 
@@ -62,6 +68,7 @@ app.include_router(odds.router)
 app.include_router(events.router)
 app.include_router(correlations.router)
 app.include_router(datasources.router)
+app.include_router(champion.router)
 
 
 # ── WebSocket for real-time odds ──────────────────────
@@ -138,5 +145,6 @@ async def root():
             "correlations": "/api/v1/correlations",
             "datasources": "/api/v1/datasources",
             "websocket": "/ws/realtime",
+            "champion": "/api/v1/champion",
         },
     }

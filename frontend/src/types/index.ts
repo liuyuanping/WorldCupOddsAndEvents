@@ -103,3 +103,63 @@ export const CURVE_COLORS = [
   "#3b82f6", "#ef4444", "#22c55e", "#f59e0b",
   "#8b5cf6", "#06b6d4", "#ec4899", "#84cc16",
 ];
+
+/* ── Champion Types ──────────────────────────────────── */
+
+export interface TeamProfile {
+  team_id: string;
+  team_name: string;
+  flag_emoji: string;
+  group: string;
+  elo_rating: number;
+  best_odds: number;
+  avg_odds: number;
+  implied_probability: number;
+  odds_trend_30d: number;
+  recent_form: string;
+  key_events_count?: number;
+  events_summary?: string[];
+}
+
+export interface ChampionOddsData {
+  team_name: string;
+  timeline: Array<{ timestamp: string; odds_value: number; implied_probability: number; bookmaker: string }>;
+  latest: Record<string, number>;
+  latest_avg: number;
+}
+
+export interface TeamEventData {
+  team_id: string;
+  team_name: string;
+  event_type: string;
+  title: string;
+  description: string;
+  timestamp: string;
+  severity: number;
+  confidence: number;
+}
+
+export interface ChampionPredictionResult {
+  team_id: string;
+  team_name: string;
+  flag_emoji: string;
+  market_probability: number;
+  sim_probability: number;
+  value_edge_pct: number;
+  elo_rating: number;
+  group: string;
+}
+
+export interface ChampionPrediction {
+  rankings: ChampionPredictionResult[];
+  total_simulations: number;
+  top_pick: ChampionPredictionResult;
+  value_pick: ChampionPredictionResult;
+  dark_horse: ChampionPredictionResult;
+}
+
+export interface OddsTrendSeries {
+  team_name: string;
+  flag_emoji: string;
+  data: Array<{ timestamp: string; odds: number; prob: number }>;
+}
