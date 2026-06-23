@@ -1,7 +1,86 @@
 /* ── Probability Trend Line Chart ──────────────────────── */
+import { useMemo } from "react";
 import ReactECharts from "echarts-for-react";
 import { useAppStore } from "../store/useAppStore";
 import { getTeamColor, SEVERITY_COLORS } from "../types";
+
+/** Format timestamp to full datetime */
+function fmtTime(ts: number): string {
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+/** Build a common time grid from all series and interpolate each team's values */
+function normalizeSeries(
+  oddsTrends: Record<string, { team_name: string; flag_emoji: string; data: Array<{ timestamp: string; prob: number }> }>,
+  teamIds: string[]
+): { grid: number[]; series: Map<string, Array<[number, number]>> } {
+  // Collect all unique timestamps
+  const tsSet = new Set<number>();
+  for (const tid of teamIds) {
+    const s = oddsTrends[tid];
+    if (!s) continue;
+    for (const d of s.data) {
+      tsSet.add(new Date(d.timestamp).getTime());
+    }
+  }
+  const grid = [...tsSet].sort((a, b) => a - b);
+  if (grid.length < 2) return { grid, series: new Map() };
+
+  // Interpolate each team to the common grid
+  const result = new Map<string, Array<[number, number]>>();
+  for (const tid of teamIds) {
+    const s = oddsTrends[tid];
+    if (!s || s.data.length < 2) {
+      // Not enough data → use raw points
+      const raw = (s?.data || []).map((d) => [new Date(d.timestamp).getTime(), (d.prob ?? 0) * 100] as [number, number]);
+      result.set(tid, raw);
+      continue;
+    }
+
+    // Build lookup from raw data
+    const rawMap = new Map<number, number>();
+    for (const d of s.data) {
+      rawMap.set(new Date(d.timestamp).getTime(), (d.prob ?? 0) * 100);
+    }
+
+    // Interpolate missing points
+    const rawTs = [...rawMap.keys()].sort((a, b) => a - b);
+    const interpolated: Array<[number, number]> = [];
+
+    for (const t of grid) {
+      if (rawMap.has(t)) {
+        interpolated.push([t, rawMap.get(t)!]);
+      } else {
+        // Find nearest neighbors
+        let lo = -1, hi = -1;
+        for (let j = rawTs.length - 1; j >= 0; j--) {
+          if (rawTs[j] <= t) { lo = j; break; }
+        }
+        for (let j = 0; j < rawTs.length; j++) {
+          if (rawTs[j] >= t) { hi = j; break; }
+        }
+
+        if (lo >= 0 && hi >= 0 && lo !== hi) {
+          // Linear interpolation
+          const tLo = rawTs[lo], tHi = rawTs[hi];
+          const vLo = rawMap.get(tLo)!, vHi = rawMap.get(tHi)!;
+          const frac = (t - tLo) / (tHi - tLo);
+          interpolated.push([t, vLo + (vHi - vLo) * frac]);
+        } else if (lo >= 0) {
+          interpolated.push([t, rawMap.get(rawTs[lo])!]);
+        } else if (hi >= 0) {
+          interpolated.push([t, rawMap.get(rawTs[hi])!]);
+        }
+      }
+    }
+
+    result.set(tid, interpolated);
+  }
+
+  return { grid, series: result };
+}
 
 export default function ChampionTrend() {
   const oddsTrends = useAppStore((s) => s.oddsTrends);
@@ -13,11 +92,18 @@ export default function ChampionTrend() {
   const hoveredTeamId = useAppStore((s) => s.hoveredTeamId);
   const selectedEventTypes = useAppStore((s) => s.selectedEventTypes);
 
-  if (trendsLoading && Object.keys(oddsTrends).length === 0) {
+  const teamIds = Object.keys(oddsTrends);
+
+  // Normalize all series to a common time grid
+  const normalized = useMemo(
+    () => (teamIds.length > 0 ? normalizeSeries(oddsTrends, teamIds) : { grid: [], series: new Map<string, Array<[number, number]>>() }),
+    [oddsTrends, teamIds]
+  );
+
+  if (trendsLoading && teamIds.length === 0) {
     return <div className="panel loading">加载数据中...</div>;
   }
 
-  const teamIds = Object.keys(oddsTrends);
   if (teamIds.length === 0) {
     return <div className="panel loading">选择球队查看胜率趋势</div>;
   }
@@ -33,12 +119,13 @@ export default function ChampionTrend() {
     tooltip: {
       trigger: "axis" as const,
       formatter: (params: any) => {
+        if (!Array.isArray(params) || params.length === 0) return "";
+        const ts = params[0]?.value[0];
         const lines = params.map(
           (p: any) =>
             `<span style="color:${p.color}">●</span> ${p.seriesName}: <b>${p.value[1]?.toFixed(1)}%</b>`
         );
-        const d = new Date(params[0]?.value[0]);
-        return `<b>${d.toLocaleDateString("zh-CN")}</b><br/>${lines.join("<br/>")}`;
+        return `<b>${fmtTime(ts)}</b><br/>${lines.join("<br/>")}`;
       },
     },
     legend: {
@@ -53,10 +140,7 @@ export default function ChampionTrend() {
     xAxis: {
       type: "time" as const,
       axisLabel: {
-        formatter: (v: number) => {
-          const d = new Date(v);
-          return `${d.getMonth() + 1}/${d.getDate()}`;
-        },
+        formatter: (v: number) => fmtTime(v).slice(0, 10),
         fontSize: 11,
       },
     },
@@ -66,19 +150,15 @@ export default function ChampionTrend() {
       axisLabel: { formatter: "{value}%", fontSize: 11 },
     },
     series: teamIds.map((tid) => {
-      const series = oddsTrends[tid];
-      // Use probability (0-1) → percentage
-      const data = (series?.data || []).map((d) => [
-        new Date(d.timestamp).getTime(),
-        (d.prob ?? 0) * 100,
-      ]);
+      const data = normalized.series.get(tid) || [];
       const isHovered = !hoveredTeamId || hoveredTeamId === tid;
       return {
         type: "line" as const,
-        name: `${series?.flag_emoji || ""} ${series?.team_name || tid}`,
+        name: `${oddsTrends[tid]?.flag_emoji || ""} ${oddsTrends[tid]?.team_name || tid}`,
         data,
         smooth: true,
         symbol: "none" as const,
+        connectNulls: true,
         lineStyle: {
           width: isHovered ? 2 : 1,
           color: getTeamColor(tid),
@@ -92,15 +172,13 @@ export default function ChampionTrend() {
             .filter((e) => e.team_id === tid)
             .map((e) => {
               const evtTs = new Date(e.timestamp).getTime();
-              const nearest = data.reduce((prev, curr) =>
-                Math.abs(curr[0] - evtTs) < Math.abs(prev[0] - evtTs) ? curr : prev
+              const nearest = data.reduce((prev: [number, number], curr: [number, number]) =>
+                Math.abs(curr[0] - evtTs) < Math.abs(prev[0] - evtTs) ? curr : prev, data[0] || [0, 0]
               );
               return {
                 name: e.title,
                 coord: [nearest[0], nearest[1]],
-                itemStyle: {
-                  color: SEVERITY_COLORS[e.severity] || "#f59e0b",
-                },
+                itemStyle: { color: SEVERITY_COLORS[e.severity] || "#f59e0b" },
               };
             }),
         },
