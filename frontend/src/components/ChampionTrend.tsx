@@ -123,7 +123,7 @@ export default function ChampionTrend() {
           <option value="Betfair">Betfair</option>
         </select>
       </div>
-      <ReactECharts option={option} style={{ height: 360, width: "100%" }} />
+      <ReactECharts option={option} style={{ height: 360, width: "100%" }} notMerge={true} />
       <div className="trend-legend">
         {teamIds.map((tid) => (
           <span

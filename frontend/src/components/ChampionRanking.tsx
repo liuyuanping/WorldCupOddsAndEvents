@@ -114,6 +114,7 @@ export default function ChampionRanking() {
       <ReactECharts
         option={option}
         style={{ height: chartHeight, width: "100%" }}
+        notMerge={true}
         onEvents={{
           click: (params: any) => {
             const idx = params.dataIndex;
