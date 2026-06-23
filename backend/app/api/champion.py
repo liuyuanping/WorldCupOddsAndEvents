@@ -318,7 +318,7 @@ async def get_odds_trend(
     team_ids: str = Query(default="brazil,france,england,argentina"),
     bookmaker: str = Query(default="Pinnacle"),
     provider: str = Query(default="polymarket"),
-    interval: str = Query(default="1w", description="1h, 6h, 1d, 1w, 1m, 3m, 6m, 1y, all"),
+    interval: str = Query(default="1w", description="1h, 6h, 1d, 1w, 1m, all (CLOB retains ~30 days)"),
 ):
     """Get odds trend data for selected teams (for line chart)."""
     tid_list = team_ids.split(",")
@@ -328,12 +328,9 @@ async def get_odds_trend(
         # Use Polymarket CLOB price history
         adapter = registry.get_odds_instance("polymarket")
         if adapter and hasattr(adapter, 'get_price_history'):
-            # Map interval to fidelity: shorter = higher resolution, longer = lower
-            # Fidelity range: 1 (coarsest) ~ 60 (finest)
-            fidelity_map = {
-                "1h": 60, "6h": 60, "1d": 30, "1w": 20,
-                "1m": 10, "3m": 5, "6m": 3, "1y": 2, "all": 1,
-            }
+            # Fidelity: higher = denser points. CLOB retains ~30 days regardless.
+            # Range 1 (coarsest) → 60 (finest)
+            fidelity_map = {"1h": 60, "6h": 60, "1d": 30, "1w": 20, "1m": 10, "all": 1}
             fidelity = fidelity_map.get(interval, 20)
 
             for tid in tid_list:
