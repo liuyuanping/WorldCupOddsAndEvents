@@ -206,6 +206,300 @@ event_providers:
     categories: ["goal", "card", "substitution", "injury"]
 ```
 
+### 3.5 插件生命周期与动态注册
+
+```
+适配器生命周期状态机:
+
+  ┌──────────┐     register()     ┌──────────┐
+  │  CREATED │───────────────────▶│REGISTERED│
+  └──────────┘                    └────┬─────┘
+                                       │
+                              enable() │        disable()
+                                       ▼           │
+                                  ┌─────────┐      │
+                                  │ENABLING │      │
+                                  └────┬────┘      │
+                                       │           │
+                          ┌────────────┼───────┐   │
+                          ▼            ▼       ▼   │
+                     ┌────────┐  ┌──────────┐ ┌───────┐
+                     │ ACTIVE │  │DEGRADED  │ │ERROR  │
+                     └───┬────┘  └────┬─────┘ └───┬───┘
+                         │            │           │
+                         └────────────┼───────────┘
+                                      │
+                              disable()│   unregister()
+                                      ▼        │
+                                  ┌──────────┐ │
+                                  │DISABLING │◀┘
+                                  └────┬─────┘
+                                       │
+                                       ▼
+                                  ┌──────────┐
+                                  │ DISABLED │
+                                  └──────────┘
+```
+
+**插件注册中心实现：**
+
+```python
+import importlib
+import pkgutil
+from typing import Type, Dict, Optional
+import inspect
+import asyncio
+
+class DataSourceRegistry:
+    """
+    数据源注册中心
+    
+    功能:
+    - 运行时动态注册/注销数据源适配器
+    - 自动发现已安装的适配器包
+    - 健康检查与生命周期管理
+    """
+    
+    def __init__(self):
+        self._odds_adapters: Dict[str, Type[OddsProviderAdapter]] = {}
+        self._event_adapters: Dict[str, Type[EventProviderAdapter]] = {}
+        self._instances: Dict[str, Any] = {}
+        self._states: Dict[str, AdapterState] = {}
+        self._health_tasks: Dict[str, asyncio.Task] = {}
+    
+    def register(
+        self, 
+        adapter_class: Type, 
+        provider_id: Optional[str] = None
+    ) -> str:
+        """注册适配器类"""
+        provider_id = provider_id or adapter_class.__name__
+        
+        if issubclass(adapter_class, OddsProviderAdapter):
+            self._odds_adapters[provider_id] = adapter_class
+        elif issubclass(adapter_class, EventProviderAdapter):
+            self._event_adapters[provider_id] = adapter_class
+        else:
+            raise ValueError(f"Unknown adapter type: {adapter_class}")
+        
+        self._states[provider_id] = AdapterState.REGISTERED
+        logger.info(f"Registered adapter: {provider_id}")
+        return provider_id
+    
+    def auto_discover(self, package_path: str = "adapters"):
+        """自动发现已安装的适配器包"""
+        package = importlib.import_module(package_path)
+        
+        for _, module_name, _ in pkgutil.iter_modules(package.__path__):
+            module = importlib.import_module(f"{package_path}.{module_name}")
+            
+            for name, obj in inspect.getmembers(module, inspect.isclass):
+                if issubclass(obj, (OddsProviderAdapter, EventProviderAdapter)) \
+                   and obj not in (OddsProviderAdapter, EventProviderAdapter):
+                    self.register(obj)
+    
+    async def enable(self, provider_id: str, config: dict) -> bool:
+        """启用适配器实例"""
+        if provider_id not in self._states:
+            raise ValueError(f"Unknown provider: {provider_id}")
+        
+        self._states[provider_id] = AdapterState.ENABLING
+        
+        try:
+            adapter_class = (
+                self._odds_adapters.get(provider_id) or 
+                self._event_adapters.get(provider_id)
+            )
+            
+            # 实例化
+            instance = adapter_class(config=config)
+            await instance.initialize()
+            
+            self._instances[provider_id] = instance
+            self._states[provider_id] = AdapterState.ACTIVE
+            
+            # 启动健康检查
+            self._health_tasks[provider_id] = asyncio.create_task(
+                self._health_loop(provider_id, instance)
+            )
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to enable {provider_id}: {e}")
+            self._states[provider_id] = AdapterState.ERROR
+            return False
+    
+    async def disable(self, provider_id: str, grace_period: float = 10.0):
+        """禁用适配器"""
+        self._states[provider_id] = AdapterState.DISABLING
+        
+        # 取消健康检查
+        if provider_id in self._health_tasks:
+            self._health_tasks[provider_id].cancel()
+        
+        # 优雅关闭
+        instance = self._instances.get(provider_id)
+        if instance and hasattr(instance, 'shutdown'):
+            await instance.shutdown(grace_period)
+        
+        self._states[provider_id] = AdapterState.DISABLED
+    
+    async def _health_loop(self, provider_id: str, instance, interval: int = 30):
+        """健康检查循环"""
+        while True:
+            try:
+                await asyncio.sleep(interval)
+                healthy = await instance.health_check()
+                
+                if healthy:
+                    if self._states[provider_id] in (AdapterState.DEGRADED,):
+                        self._states[provider_id] = AdapterState.ACTIVE
+                        logger.info(f"{provider_id} recovered to ACTIVE")
+                else:
+                    if self._states[provider_id] == AdapterState.ACTIVE:
+                        self._states[provider_id] = AdapterState.DEGRADED
+                        logger.warning(f"{provider_id} degraded")
+                        
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Health check failed for {provider_id}: {e}")
+    
+    def get_active_odds_providers(self) -> List[str]:
+        """获取所有活跃的赔率数据源"""
+        return [
+            pid for pid, state in self._states.items()
+            if pid in self._odds_adaptors and state == AdapterState.ACTIVE
+        ]
+    
+    def get_instance(self, provider_id: str) -> Optional[Any]:
+        """获取适配器实例"""
+        return self._instances.get(provider_id)
+```
+
+### 3.6 自定义数据源SDK
+
+**第三方开发者接入SDK：**
+
+```python
+# adapters/custom_odds_adapter.py
+"""
+自定义赔率数据源开发指南
+
+只需继承 OddsProviderAdapter 并实现5个抽象方法，
+然后在配置文件中注册即可。
+"""
+
+from odds_correlation_sdk import OddsProviderAdapter, OddsRecord, register_adapter
+
+@register_adapter(
+    provider_id="my_custom_odds",
+    name="My Custom Odds Provider",
+    version="1.0.0"
+)
+class MyCustomOddsAdapter(OddsProviderAdapter):
+    """自定义赔率数据源适配器"""
+    
+    def get_provider_info(self) -> dict:
+        return {
+            "name": "My Custom Odds Provider",
+            "version": "1.0.0",
+            "supported_markets": ["h2h", "over_under"],
+            "supported_bookmakers": ["CustomBookmaker"],
+            "update_frequency": "real_time",
+            "latency_ms": 500,
+            "rate_limit": "1000 req/hour",
+            "documentation_url": "https://docs.example.com"
+        }
+    
+    async def initialize(self):
+        """初始化连接 (注册时调用一次)"""
+        self._http_client = aiohttp.ClientSession(
+            base_url=self.config["base_url"],
+            headers={"Authorization": f"Bearer {self.config['api_key']}"}
+        )
+        self._ws_client = None
+    
+    async def fetch_odds(self, **filters) -> List[OddsRecord]:
+        """从自定义API拉取赔率数据"""
+        params = self._build_query_params(filters)
+        
+        async with self._http_client.get("/api/v1/odds", params=params) as resp:
+            if resp.status == 429:
+                raise RateLimitError("Rate limit exceeded")
+            
+            data = await resp.json()
+            
+            # 映射到标准 OddsRecord 格式
+            return [
+                OddsRecord(
+                    provider="my_custom_odds",
+                    source_id=f"custom_{item['id']}",
+                    match_id=item["fixture_id"],
+                    bookmaker="CustomBookmaker",
+                    market=self._map_market(item["market"]),
+                    selection=item["outcome"],
+                    odds_value=float(item["price"]),
+                    odds_format=OddsFormat.DECIMAL,
+                    implied_probability=1.0 / float(item["price"]),
+                    timestamp=datetime.fromisoformat(item["updated_at"]),
+                    received_at=datetime.utcnow(),
+                    metadata={"raw": item}
+                )
+                for item in data["odds"]
+            ]
+    
+    async def stream_odds(self, match_ids: List[str], 
+                          on_update: Callable) -> AsyncIterator:
+        """WebSocket实时流订阅"""
+        self._ws_client = await self._http_client.ws_connect("/ws/odds/live")
+        
+        # 订阅指定比赛
+        await self._ws_client.send_json({
+            "action": "subscribe",
+            "match_ids": match_ids
+        })
+        
+        async for msg in self._ws_client:
+            if msg.type == aiohttp.WSMsgType.TEXT:
+                data = json.loads(msg.data)
+                record = self._parse_ws_message(data)
+                if record:
+                    yield record
+    
+    async def health_check(self) -> bool:
+        """健康检查"""
+        try:
+            async with self._http_client.get("/health") as resp:
+                return resp.status == 200
+        except Exception:
+            return False
+    
+    async def shutdown(self, grace_period: float = 10.0):
+        """优雅关闭"""
+        if self._ws_client:
+            await self._ws_client.close()
+        if self._http_client:
+            await self._http_client.close()
+    
+    def get_supported_markets(self) -> List[str]:
+        return ["h2h", "over_under", "asian_handicap"]
+    
+    def get_supported_bookmakers(self) -> List[str]:
+        return ["CustomBookmaker"]
+    
+    def _map_market(self, market: str) -> str:
+        """将自定义市场代码映射到标准类型"""
+        MAPPING = {
+            "1X2": "h2h",
+            "OU": "over_under",
+            "AH": "asian_handicap"
+        }
+        return MAPPING.get(market, market.lower())
+```
+```
+
 
 ## 四、核心数据模型
 
@@ -342,6 +636,659 @@ class EventOddsCorrelation:
 - **OLAP分析**：使用Apache Druid或ClickHouse支持高效的历史数据聚合查询
 - **数据质量检查**：自动化检查数据完整性、异常值检测
 
+### 5.3 采集器详细设计
+
+**采集器生命周期状态机：**
+
+```
+                    ┌──────────┐
+           ┌───────▶│  ACTIVE   │◀──────┐
+           │        └─────┬─────┘       │
+           │              │             │
+    启动成功│         ┌────▼────┐   恢复成功
+           │         │ BACKOFF │       │
+    ┌──────┴──┐      └────┬────┘  ┌────┴──────┐
+    │INIT     │           │       │ DEGRADED   │
+    └──────┬──┘     ┌────▼────┐  └────┬──────┘
+           │        │  ERROR   │◀──────┘
+           └───────▶│          │  连续失败
+           启动失败  └────┬────┘
+                         │ 不可恢复错误
+                    ┌────▼────┐
+                    │  DEAD    │
+                    └─────────┘
+```
+
+**采集器核心实现：**
+
+```python
+import asyncio
+import signal
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from typing import Optional, Callable, Awaitable
+from enum import Enum
+import logging
+
+logger = logging.getLogger(__name__)
+
+class CollectorState(Enum):
+    INIT = "init"
+    ACTIVE = "active"
+    BACKOFF = "backoff"
+    DEGRADED = "degraded"
+    ERROR = "error"
+    DEAD = "dead"
+
+@dataclass
+class CollectorConfig:
+    """采集器配置"""
+    provider_id: str
+    poll_interval_ms: int = 500           # 拉取模式间隔
+    max_retries: int = 5
+    backoff_base_ms: int = 1000           # 退避基础时间
+    backoff_max_ms: int = 60000           # 退避上限
+    backoff_multiplier: float = 2.0
+    max_lag_seconds: int = 300            # 超过此延迟进入 DEGRADED
+    health_check_interval_ms: int = 10000
+
+@dataclass
+class CollectorMetrics:
+    """采集器运行时指标"""
+    state: CollectorState = CollectorState.INIT
+    messages_collected: int = 0
+    messages_errors: int = 0
+    last_success_at: Optional[datetime] = None
+    last_error_at: Optional[datetime] = None
+    last_error_message: Optional[str] = None
+    current_lag_ms: float = 0.0           # 当前端到端延迟
+    consecutive_errors: int = 0
+    uptime_seconds: float = 0.0
+
+class OddsDataCollector:
+    """
+    单数据源采集器
+    
+    职责边界：只负责"获取数据 → 放入Kafka"，不做任何解析转换。
+    每个 provider 一个独立进程实例，故障隔离。
+    """
+    
+    def __init__(
+        self,
+        config: CollectorConfig,
+        adapter: OddsProviderAdapter,
+        kafka_producer: KafkaProducer,
+        metrics_registry: MetricsRegistry
+    ):
+        self.config = config
+        self.adapter = adapter
+        self.kafka = kafka_producer
+        self.metrics = CollectorMetrics()
+        self._state = CollectorState.INIT
+        self._stop_event = asyncio.Event()
+        self._backoff_attempt = 0
+    
+    async def run(self):
+        """采集器主循环"""
+        self._transition(CollectorState.ACTIVE)
+        self.metrics.uptime_seconds = 0
+        start_time = datetime.now()
+        
+        while not self._stop_event.is_set():
+            try:
+                # 从数据源拉取数据
+                async for batch in self.adapter.stream_odds(
+                    match_ids=self._subscribed_matches,
+                    on_update=None  # 批量模式
+                ):
+                    if self._stop_event.is_set():
+                        break
+                    
+                    # 打上纳秒级接收时间戳
+                    received_at = datetime.utcnow()
+                    for record in batch:
+                        record.received_at = received_at
+                        record._collector_lag_ms = (
+                            received_at - record.timestamp
+                        ).total_seconds() * 1000
+                    
+                    # 直接写入Kafka原始topic，不做任何转换
+                    await self._publish_raw_batch(batch)
+                    
+                    # 更新指标
+                    self.metrics.messages_collected += len(batch)
+                    self.metrics.last_success_at = received_at
+                    self.metrics.consecutive_errors = 0
+                    self._backoff_attempt = 0
+                    
+                    # 如果之前在 DEGRADED/BACKOFF 状态，恢复
+                    if self._state in (CollectorState.DEGRADED, CollectorState.BACKOFF):
+                        self._transition(CollectorState.ACTIVE)
+                
+            except asyncio.CancelledError:
+                break
+                
+            except RateLimitError as e:
+                # 速率限制 → 指数退避
+                self._handle_transient_error(e, "rate_limited")
+                
+            except (ConnectionError, TimeoutError) as e:
+                # 网络错误 → 退避
+                self._handle_transient_error(e, "network_error")
+                
+            except AuthenticationError as e:
+                # 认证错误 → 不可恢复，进入DEAD
+                self._handle_fatal_error(e, "auth_failed")
+                break
+                
+            except Exception as e:
+                self._handle_transient_error(e, "unknown")
+            
+            # 更新运行时间
+            self.metrics.uptime_seconds = (
+                datetime.now() - start_time
+            ).total_seconds()
+    
+    async def _publish_raw_batch(self, batch: List[OddsRecord]):
+        """发布原始数据到Kafka —— 不做任何转换"""
+        topic = f"raw.odds.{self.config.provider_id}"
+        messages = [
+            {
+                "key": f"{r.match_id}:{r.bookmaker}:{r.market}".encode(),
+                "value": r.model_dump_json().encode(),
+                "headers": {
+                    "provider": self.config.provider_id,
+                    "received_at": str(r.received_at.isoformat()),
+                    "source": "collector"
+                }
+            }
+            for r in batch
+        ]
+        await self.kafka.send_batch(topic, messages)
+    
+    def _handle_transient_error(self, error: Exception, error_type: str):
+        """处理可恢复错误 —— 指数退避"""
+        self.metrics.consecutive_errors += 1
+        self.metrics.last_error_at = datetime.now()
+        self.metrics.last_error_message = str(error)
+        self.metrics.messages_errors += 1
+        
+        if self.metrics.consecutive_errors >= self.config.max_retries:
+            self._transition(CollectorState.DEGRADED)
+        else:
+            self._transition(CollectorState.BACKOFF)
+        
+        # 计算退避时间
+        delay = min(
+            self.config.backoff_base_ms * 
+            (self.config.backoff_multiplier ** self._backoff_attempt),
+            self.config.backoff_max_ms
+        )
+        self._backoff_attempt += 1
+        
+        logger.warning(
+            f"[{self.config.provider_id}] {error_type} error, "
+            f"backoff={delay}ms, attempt={self._backoff_attempt}: {error}"
+        )
+        
+        # 异步等待退避
+        asyncio.ensure_future(self._backoff_sleep(delay / 1000))
+    
+    async def _backoff_sleep(self, seconds: float):
+        await asyncio.sleep(seconds)
+    
+    def _handle_fatal_error(self, error: Exception, error_type: str):
+        """处理不可恢复错误"""
+        self.metrics.last_error_at = datetime.now()
+        self.metrics.last_error_message = str(error)
+        self._transition(CollectorState.DEAD)
+        logger.error(
+            f"[{self.config.provider_id}] FATAL {error_type}: {error}"
+        )
+    
+    def _transition(self, new_state: CollectorState):
+        old_state = self._state
+        self._state = new_state
+        self.metrics.state = new_state
+        logger.info(
+            f"[{self.config.provider_id}] State: {old_state.value} → {new_state.value}"
+        )
+    
+    async def shutdown(self, grace_period: float = 10.0):
+        """优雅关闭"""
+        logger.info(f"[{self.config.provider_id}] Shutting down...")
+        self._stop_event.set()
+        # 等待进行中的批次完成
+        await asyncio.sleep(min(grace_period, 2.0))
+```
+
+### 5.4 Schema规范化引擎
+
+```
+规范化流程:
+
+  Kafka(raw) ──▶ Consumer Group ──▶ Normalizer ──▶ Kafka(normalized)
+                                          │
+                          ┌───────────────┼───────────────┐
+                          ▼               ▼               ▼
+                     Schema映射      格式统一         去重检测
+                    (DSL驱动)     (Decimal归一)    (provider+source_id)
+                          │               │               │
+                          ▼               ▼               ▼
+                     ┌─────────────────────────────────────────┐
+                     │         EnrichedRecord                   │
+                     │  - 原始字段映射到标准化字段              │
+                     │  - 赔率格式统一为 Decimal                │
+                     │  - 计算 implied_probability              │
+                     │  - 标记数据质量分数                      │
+                     └─────────────────────────────────────────┘
+```
+
+**Schema映射DSL：**
+
+```yaml
+# schema_mappings/the_odds_api.yaml
+# 声明式定义如何将 The Odds API 的响应映射到标准模型
+
+provider: the_odds_api
+version: 1
+
+field_mappings:
+  # 直接映射 (source_field → target_field)
+  direct:
+    match_id: "id"
+    bookmaker: "bookmakers[].title"
+    
+  # 转换映射 (需要类型转换或计算)
+  transforms:
+    odds_value:
+      source: "bookmakers[].markets[].outcomes[].price"
+      type: float
+    market:
+      source: "bookmakers[].markets[].key"
+      type: enum
+      values:
+        h2h: "h2h"
+        spreads: "asian_handicap"
+        totals: "over_under"
+    selection:
+      source: "bookmakers[].markets[].outcomes[].name"
+      type: string
+    implied_probability:
+      source: "bookmakers[].markets[].outcomes[].price"
+      transform: "1.0 / value"   # Decimal赔率 → 隐含概率
+    odds_format:
+      value: "decimal"            # 固定值
+
+  # 时间戳处理
+  timestamps:
+    timestamp:
+      source: "bookmakers[].markets[].last_update"
+      format: "iso8601"
+      timezone: "UTC"
+    
+  # 质量标记
+  quality_checks:
+    - rule: "odds_value > 0"
+      action: "reject_row"
+    - rule: "odds_value > 1.0"
+      action: "flag_suspicious"
+    - rule: "implied_probability > 0 and implied_probability < 1"
+      action: "reject_row"
+```
+
+**规范化处理器实现：**
+
+```python
+import hashlib
+from typing import Dict, Any, Optional
+import json
+
+class SchemaNormalizer:
+    """
+    Schema规范化处理器
+    
+    消费 raw topic，产出 normalized topic。
+    使用声明式DSL进行字段映射，避免硬编码。
+    """
+    
+    def __init__(self, mapping_registry: MappingRegistry):
+        self.registry = mapping_registry
+    
+    async def normalize(self, raw_message: KafkaMessage) -> Optional[EnrichedRecord]:
+        provider = raw_message.headers["provider"]
+        mapping = self.registry.get(provider)
+        
+        if not mapping:
+            logger.error(f"No mapping found for provider: {provider}")
+            return None
+        
+        raw = json.loads(raw_message.value)
+        
+        try:
+            # Step 1: 应用字段映射
+            record = self._apply_mapping(raw, mapping)
+            
+            # Step 2: 数据质量检查
+            quality_score, issues = self._quality_check(record, mapping)
+            if not issues.critical:
+                record.quality_score = quality_score
+            else:
+                # 写入死信队列
+                await self._send_to_dlq(raw, issues)
+                return None
+            
+            # Step 3: 生成去重键
+            record.dedup_key = hashlib.sha256(
+                f"{record.provider}:{record.source_id}".encode()
+            ).hexdigest()
+            
+            # Step 4: 附加元数据
+            record.normalized_at = datetime.utcnow()
+            record.schema_version = mapping.version
+            
+            return record
+            
+        except Exception as e:
+            logger.error(f"Normalization failed for {provider}: {e}")
+            await self._send_to_dlq(raw, MappingError(str(e)))
+            return None
+    
+    def _apply_mapping(self, raw: Dict, mapping: FieldMapping) -> OddsRecord:
+        """应用声明式字段映射"""
+        record = OddsRecord()
+        
+        # 直接映射
+        for target, source_path in mapping.direct.items():
+            value = self._extract_nested(raw, source_path)
+            setattr(record, target, value)
+        
+        # 转换映射
+        for target, transform_def in mapping.transforms.items():
+            if "value" in transform_def:
+                # 固定值
+                value = transform_def["value"]
+            else:
+                value = self._extract_nested(raw, transform_def["source"])
+                if transform_def.get("transform"):
+                    value = self._eval_transform(value, transform_def["transform"])
+            setattr(record, target, value)
+        
+        return record
+    
+    def _extract_nested(self, obj: Dict, path: str) -> Any:
+        """
+        提取嵌套字段，支持数组索引
+        例: "bookmakers[].markets[].key" 
+        """
+        parts = path.replace("[]", "").split(".")
+        current = obj
+        for part in parts:
+            if isinstance(current, dict):
+                current = current.get(part)
+            elif isinstance(current, list):
+                # 取第一个元素（批量展开在外部处理）
+                current = current[0].get(part) if current else None
+        return current
+    
+    def _quality_check(self, record: OddsRecord, mapping: FieldMapping) -> Tuple[float, QualityIssues]:
+        """执行数据质量检查规则"""
+        score = 1.0
+        issues = QualityIssues()
+        
+        for check in mapping.quality_checks:
+            result = self._eval_rule(record, check["rule"])
+            if not result:
+                if check["action"] == "reject_row":
+                    issues.critical.append(check["rule"])
+                    score = 0.0
+                elif check["action"] == "flag_suspicious":
+                    issues.warnings.append(check["rule"])
+                    score -= 0.1
+        
+        return max(score, 0.0), issues
+```
+
+### 5.5 精确一次语义与去重
+
+```python
+class ExactlyOnceProcessor:
+    """
+    实现 at-least-once 投递 + 幂等写入 → exactly-once 效果
+    
+    策略:
+    1. Kafka producer: enable.idempotence=true, acks=all
+    2. 写入层: INSERT ... ON CONFLICT (provider, source_id) DO NOTHING
+    3. 去重窗口: Redis Bitmap (最近24小时的去重指纹)
+    """
+    
+    def __init__(self, redis: Redis, db_pool: AsyncConnectionPool):
+        self.redis = redis
+        self.db = db_pool
+    
+    async def process_batch(self, records: List[EnrichedRecord]) -> BatchResult:
+        """处理一批规范化记录，保证精确一次"""
+        
+        # Phase 1: 快速去重 (Redis Bloom Filter)
+        candidates = []
+        for record in records:
+            dedup_fingerprint = self._fingerprint(record)
+            exists = await self.redis.getbit(
+                f"dedup:{datetime.utcnow():%Y%m%d%H}", 
+                self._hash_to_offset(dedup_fingerprint)
+            )
+            if not exists:
+                candidates.append(record)
+                # 标记为已见 (允许少量误判，数据库层做最终去重)
+                await self.redis.setbit(
+                    f"dedup:{datetime.utcnow():%Y%m%d%H}",
+                    self._hash_to_offset(dedup_fingerprint),
+                    1
+                )
+        
+        if not candidates:
+            return BatchResult(processed=0, duplicates=len(records), errors=0)
+        
+        # Phase 2: 数据库幂等写入
+        async with self.db.transaction():
+            result = await self.db.execute(
+                """
+                INSERT INTO odds_records (
+                    provider, source_id, match_id, bookmaker, market,
+                    selection, odds_value, odds_format, implied_prob,
+                    timestamp, received_at, metadata
+                )
+                SELECT 
+                    r.provider, r.source_id, r.match_id, r.bookmaker, r.market,
+                    r.selection, r.odds_value, r.odds_format, r.implied_prob,
+                    r.timestamp, r.received_at, r.metadata
+                FROM UNNEST($1::odds_records[]) AS r
+                ON CONFLICT (provider, source_id) DO NOTHING
+                RETURNING 1
+                """,
+                candidates
+            )
+            inserted = len(result)
+        
+        duplicates = len(candidates) - inserted
+        return BatchResult(
+            processed=inserted,
+            duplicates=len(records) - len(candidates) + duplicates,
+            errors=0
+        )
+    
+    def _fingerprint(self, record: EnrichedRecord) -> str:
+        """生成去重指纹"""
+        return f"{record.provider}:{record.source_id}:{record.timestamp.isoformat()}"
+    
+    def _hash_to_offset(self, fingerprint: str) -> int:
+        """Hash → Bitmap offset (2^20 = 1M bits per hour window)"""
+        return int(hashlib.md5(fingerprint.encode()).hexdigest()[:5], 16) % (2 ** 20)
+```
+
+### 5.6 反压与流量控制
+
+```
+反压传播链:
+
+  DB写入慢 ──▶ Kafka消费者延迟 ──▶ normalized topic积压 ──▶ 
+  Normalizer处理慢 ──▶ raw topic积压 ──▶ Collector降低采集频率
+
+实现机制:
+  - Kafka Consumer: pause()/resume() 分区
+  - Collector: 自适应轮询间隔 (根据Kafka lag动态调整)
+  - Normalizer: 动态扩缩 (KEDA based on consumer group lag)
+```
+
+```python
+class AdaptivePollController:
+    """
+    自适应采集频率控制
+    
+    根据端到端管道延迟动态调整采集间隔，实现被动反压。
+    """
+    
+    def __init__(self, base_interval_ms: int = 500):
+        self.base_interval = base_interval_ms
+        self.current_interval = base_interval_ms
+        self.max_interval = 30000
+        self.min_interval = 100
+    
+    async def calculate_next_delay(
+        self,
+        pipeline_lag_ms: float,
+        error_rate: float,
+        consecutive_errors: int
+    ) -> float:
+        """
+        综合计算下次采集延迟
+        
+        输入信号:
+        - pipeline_lag_ms: 端到端管道延迟
+        - error_rate: 近期错误率
+        - consecutive_errors: 连续错误次数
+        """
+        delay = self.base_interval
+        
+        # 信号1: 管道积压 → 增大间隔
+        if pipeline_lag_ms > 5000:       # >5s lag
+            delay *= 4
+        elif pipeline_lag_ms > 2000:     # >2s lag
+            delay *= 2
+        elif pipeline_lag_ms < 200:      # <200ms lag, 健康
+            delay = max(delay / 2, self.min_interval)
+        
+        # 信号2: 错误率 → 退避
+        if error_rate > 0.1:             # >10% 错误率
+            delay *= 3
+        
+        # 信号3: 连续错误 → 指数退避
+        if consecutive_errors > 0:
+            delay *= (2 ** min(consecutive_errors, 5))
+        
+        return min(delay, self.max_interval)
+```
+
+### 5.7 数据质量框架
+
+```python
+@dataclass
+class DataQualityReport:
+    """每小时生成的数据质量报告"""
+    provider_id: str
+    window_start: datetime
+    window_end: datetime
+    
+    # 完整性指标
+    expected_records: int           # 预期数据点数
+    actual_records: int             # 实际数据点数
+    completeness_pct: float         # 完整率
+    gap_count: int                  # 数据缺口数
+    max_gap_seconds: float          # 最大缺口时长
+    
+    # 准确性指标
+    outlier_count: int              # 异常值数 (>3σ)
+    stale_count: int                # 陈旧数据数 (延迟>阈值)
+    invalid_format_count: int       # 格式错误数
+    
+    # 及时性指标
+    p50_lag_ms: float
+    p95_lag_ms: float
+    p99_lag_ms: float
+    
+    # 一致性指标
+    cross_source_discrepancy_pct: float  # 跨数据源价格分歧 %
+    duplicate_rate_pct: float
+    
+    @property
+    def health_score(self) -> float:
+        """综合健康评分 0-100"""
+        scores = []
+        scores.append(self.completeness_pct * 0.35)
+        scores.append(max(0, 100 - self.outlier_count * 5) * 0.20)
+        scores.append(max(0, 100 - self.p95_lag_ms / 100) * 0.25)
+        scores.append(max(0, 100 - self.duplicate_rate_pct * 10) * 0.20)
+        return sum(scores)
+
+class DataQualityMonitor:
+    """数据质量持续监控"""
+    
+    async def run_hourly_check(self, provider_id: str) -> DataQualityReport:
+        """每小时质量检查"""
+        window_end = datetime.utcnow()
+        window_start = window_end - timedelta(hours=1)
+        
+        report = DataQualityReport(
+            provider_id=provider_id,
+            window_start=window_start,
+            window_end=window_end
+        )
+        
+        # 1. 完整性检查: 每个match_id应该有持续的数据点
+        report.actual_records = await self._count_records(provider_id, window_start, window_end)
+        report.expected_records = await self._estimate_expected(provider_id, window_start, window_end)
+        report.completeness_pct = (report.actual_records / max(report.expected_records, 1)) * 100
+        
+        # 2. 缺口检测: 连续数据点间的时间间隔
+        gaps = await self._detect_gaps(provider_id, window_start, window_end)
+        report.gap_count = len(gaps)
+        report.max_gap_seconds = max(gaps).total_seconds() if gaps else 0
+        
+        # 3. 异常值检测: 使用修正Z-score (MAD)
+        report.outlier_count = await self._count_outliers_mad(provider_id, window_start, window_end)
+        
+        # 4. 延迟统计
+        lag_stats = await self._calculate_lag_percentiles(provider_id, window_start, window_end)
+        report.p50_lag_ms = lag_stats.p50
+        report.p95_lag_ms = lag_stats.p95
+        report.p99_lag_ms = lag_stats.p99
+        
+        return report
+    
+    async def _count_outliers_mad(self, provider_id: str, start: datetime, end: datetime) -> int:
+        """使用MAD (Median Absolute Deviation) 检测异常值"""
+        result = await self.db.execute(
+            """
+            WITH stats AS (
+                SELECT 
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY odds_value) AS median,
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ABS(odds_value - 
+                        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY odds_value)
+                    )) AS mad
+                FROM odds_records
+                WHERE provider = $1 AND timestamp BETWEEN $2 AND $3
+            )
+            SELECT COUNT(*) 
+            FROM odds_records, stats
+            WHERE provider = $1 
+              AND timestamp BETWEEN $2 AND $3
+              AND ABS(odds_value - stats.median) / NULLIF(stats.mad, 0) > 3.5
+            """,
+            provider_id, start, end
+        )
+        return result.scalar()
+```
+
 
 ## 六、分析引擎层
 
@@ -398,6 +1345,1454 @@ class EventOddsCorrelationEngine:
 | **市场效率分析** | 评估事件信息是否已被市场充分定价 | 事件窗口内赔率变动速度与幅度分析 |
 | **异常预警** | 检测无事件驱动的异常赔率变动 | 时序异常检测算法 |
 | **趋势分析** | 滚动窗口分析赔率趋势与事件累积效应 | sportiq-mcp `football_form_trends` |
+
+### 6.3 CUSUM 变点检测算法
+
+**数学原理：**
+
+CUSUM (Cumulative Sum Control Chart) 通过累积偏差检测序列的结构突变。给定赔率序列 `{x₁, x₂, ..., xₙ}`，计算：
+
+```
+S₀ = 0
+Sₜ = max(0, Sₜ₋₁ + (xₜ - μ₀ - k))
+其中: μ₀ = 目标均值（滑动窗口估计）
+      k = 允许偏差（通常设为 0.5δ，δ为期望检测的最小变幅）
+触发: 当 Sₜ > h (控制限) 时检测到正向变点
+```
+
+**完整实现：**
+
+```python
+import numpy as np
+from dataclasses import dataclass
+from typing import List, Tuple, Optional
+
+@dataclass
+class ChangepointResult:
+    """变点检测结果"""
+    timestamp: datetime
+    confidence: float           # 0-1
+    magnitude: float            # 变动幅度 (绝对)
+    direction: str              # "up" | "down"
+    pre_mean: float             # 变点前均值
+    post_mean: float            # 变点后均值
+    detection_lag_ms: float     # 检测延迟 (从变点发生到检测到)
+
+class CUSUMChangepointDetector:
+    """
+    双CUSUM变点检测器
+    
+    同时运行两个CUSUM:
+    - S⁺ 检测向上突变（赔率上升）
+    - S⁻ 检测向下突变（赔率下降）
+    """
+    
+    def __init__(
+        self,
+        threshold: float = 5.0,         # h: 控制限
+        drift: float = 0.5,             # k: 允许漂移
+        estimation_window: int = 60,    # 均值估计窗口（数据点数）
+        min_change_magnitude: float = 0.02  # 最小变幅（相对值）
+    ):
+        self.h = threshold
+        self.k = drift
+        self.estimation_window = estimation_window
+        self.min_change = min_change_magnitude
+        
+        # 状态
+        self.S_pos = 0.0      # 正向CUSUM
+        self.S_neg = 0.0      # 负向CUSUM
+        self.mu_hat = None    # 估计均值
+        self.buffer = []      # 滑动窗口
+    
+    def update(self, value: float, timestamp: datetime) -> Optional[ChangepointResult]:
+        """逐个数据点更新，返回是否检测到变点"""
+        self.buffer.append(value)
+        
+        # 维护滑动窗口
+        if len(self.buffer) > self.estimation_window * 3:
+            self.buffer = self.buffer[-self.estimation_window:]
+        
+        # 定期重新估计均值（每 estimation_window 个点）
+        if len(self.buffer) >= self.estimation_window and len(self.buffer) % (self.estimation_window // 2) == 0:
+            recent = self.buffer[-self.estimation_window:]
+            self.mu_hat = np.mean(recent)
+        
+        if self.mu_hat is None:
+            return None
+        
+        # 标准化偏差
+        normalized_deviation = (value - self.mu_hat) / max(abs(self.mu_hat), 0.001)
+        
+        # 更新CUSUM统计量
+        self.S_pos = max(0, self.S_pos + normalized_deviation - self.k)
+        self.S_neg = max(0, self.S_neg - normalized_deviation - self.k)
+        
+        # 检查是否触发
+        if self.S_pos > self.h:
+            result = self._build_result(value, "up", self.S_pos, timestamp)
+            self._reset()
+            return result
+        
+        if self.S_neg > self.h:
+            result = self._build_result(value, "down", self.S_neg, timestamp)
+            self._reset()
+            return result
+        
+        return None
+    
+    def _build_result(self, value: float, direction: str, S_value: float, ts: datetime) -> ChangepointResult:
+        """构建变点检测结果"""
+        if len(self.buffer) >= self.estimation_window:
+            pre_window = self.buffer[-2*self.estimation_window:-self.estimation_window]
+            post_window = self.buffer[-self.estimation_window:]
+            pre_mean = np.mean(pre_window) if pre_window else self.mu_hat
+            post_mean = np.mean(post_window) if post_window else value
+        else:
+            pre_mean = self.mu_hat
+            post_mean = value
+        
+        magnitude = abs(post_mean - pre_mean) / max(abs(pre_mean), 0.001)
+        
+        # 置信度基于CUSUM统计量超过阈值的程度
+        confidence = min(S_value / (self.h * 2), 1.0)
+        
+        # 过滤过小的变动
+        if magnitude < self.min_change:
+            confidence *= (magnitude / self.min_change)
+        
+        return ChangepointResult(
+            timestamp=ts,
+            confidence=confidence,
+            magnitude=magnitude,
+            direction=direction,
+            pre_mean=pre_mean,
+            post_mean=post_mean,
+            detection_lag_ms=0  # 由外部填充
+        )
+    
+    def _reset(self):
+        """变点检测后重置CUSUM状态"""
+        self.S_pos = 0.0
+        self.S_neg = 0.0
+```
+
+### 6.4 PELT 多变点检测算法
+
+**算法原理：**
+
+Pruned Exact Linear Time (PELT) 是一种精确的多变点检测算法，使用动态规划在 O(n) 时间内找到最优分割点集合：
+
+```
+优化目标: min F(s) = Σ C(y[τᵢ₋₁:τᵢ]) + β·K
+其中: C = 分段代价函数（负对数似然）
+      β = 惩罚项（控制变点数量）
+      K = 变点数量
+```
+
+```python
+from typing import List, Tuple
+import numpy as np
+from numba import jit  # 用于加速核心循环
+
+class PELTChangepointDetector:
+    """
+    PELT多变点检测器
+    
+    用于在较长时间窗口内检测多个结构突变点，
+    适用于赛后分析：回顾整场比赛的赔率演变。
+    """
+    
+    def __init__(
+        self,
+        penalty: float = 10.0,       # β: 拒绝变点的惩罚力度
+        min_segment_length: int = 5, # 最小段长 (数据点数)
+        model: str = "normal"        # 代价函数模型: normal, gamma, poisson
+    ):
+        self.penalty = penalty
+        self.min_seg_len = min_segment_length
+        self.model = model
+    
+    def detect(self, 
+               values: np.ndarray, 
+               timestamps: np.ndarray
+               ) -> List[ChangepointResult]:
+        """
+        在完整序列上运行PELT，返回所有检测到的变点
+        
+        Args:
+            values: 赔率值序列
+            timestamps: 对应的时间戳
+        Returns:
+            变点列表，按时间排序
+        """
+        n = len(values)
+        if n < 2 * self.min_seg_len:
+            return []
+        
+        # 预处理: 计算累积和（加速代价计算）
+        cumsum = np.cumsum(values)
+        cumsum2 = np.cumsum(values ** 2)
+        
+        # PELT 动态规划核心
+        # F[t] = min_{0≤s<t} { F[s] + C(y[s:t]) + β }
+        F = np.zeros(n + 1)
+        F[0] = -self.penalty  # 初始段
+        
+        # cp[t] = 最优变点序列中 t 的前驱
+        cp = np.zeros(n + 1, dtype=int)
+        
+        # R = 考虑中的候选变点集（剪枝后）
+        R = [0]
+        
+        for t in range(2 * self.min_seg_len, n + 1):
+            # 评估所有候选变点
+            best_cost = np.inf
+            best_s = t - self.min_seg_len
+            
+            new_R = []
+            for s in R:
+                if s > t - self.min_seg_len:
+                    new_R.append(s)
+                    continue
+                
+                if s < t - self.min_seg_len:
+                    continue
+                
+                # 计算段的代价
+                segment_cost = self._segment_cost(
+                    cumsum, cumsum2, s, t
+                )
+                
+                total_cost = F[s] + segment_cost + self.penalty
+                
+                if total_cost < best_cost:
+                    best_cost = total_cost
+                    best_s = s
+                
+                # PELT 剪枝: 如果 F[s] + C(s,t) ≥ F[t*] + C(t*,t), 丢弃 s
+                # (简化为基于惩罚项的剪枝)
+                if F[s] + segment_cost >= best_cost + self.penalty and s < t - self.min_seg_len:
+                    continue
+                
+                new_R.append(s)
+            
+            # 添加当前候选
+            new_R.append(t - self.min_seg_len)
+            R = new_R
+            
+            F[t] = best_cost
+            cp[t] = best_s
+        
+        # 回溯提取变点
+        changepoints = self._backtrack(F, cp, n, values, timestamps)
+        
+        return changepoints
+    
+    def _segment_cost(self, cumsum: np.ndarray, cumsum2: np.ndarray, 
+                      start: int, end: int) -> float:
+        """计算段 y[start:end] 的代价（负对数似然）"""
+        if end <= start + 1:
+            return 0.0
+        
+        length = end - start
+        
+        if self.model == "normal":
+            # 正态分布似然代价
+            sum_seg = cumsum[end-1] - (cumsum[start-1] if start > 0 else 0)
+            sum2_seg = cumsum2[end-1] - (cumsum2[start-1] if start > 0 else 0)
+            
+            mean = sum_seg / length
+            var = sum2_seg / length - mean ** 2
+            var = max(var, 1e-10)
+            
+            # -log L = (n/2)*log(2πσ²) + Σ(x-μ)²/(2σ²)
+            # 简化为 n*log(σ)
+            return length * np.log(np.sqrt(var))
+        
+        elif self.model == "gamma":
+            # Gamma分布似然代价（赔率通常偏态）
+            sample = np.diff(cumsum[start:end])  # 简化
+            if len(sample) < 2:
+                return 0.0
+            mean = np.mean(sample)
+            if mean <= 0:
+                return np.inf
+            return -length * np.log(mean)
+        
+        return 0.0
+    
+    def _backtrack(self, F: np.ndarray, cp: np.ndarray, n: int,
+                   values: np.ndarray, timestamps: np.ndarray
+                   ) -> List[ChangepointResult]:
+        """从PELT结果回溯提取变点"""
+        changepoints = []
+        
+        # 从末尾回溯
+        t = n
+        while t > 0:
+            s = cp[t]
+            if s > 0 and s < n:
+                pre_mean = np.mean(values[max(0, s-10):s])
+                post_mean = np.mean(values[s:min(n, s+10)])
+                magnitude = abs(post_mean - pre_mean) / max(abs(pre_mean), 0.001)
+                
+                changepoints.append(ChangepointResult(
+                    timestamp=timestamps[s],
+                    confidence=0.7,  # PELT无直接置信度
+                    magnitude=magnitude,
+                    direction="up" if post_mean > pre_mean else "down",
+                    pre_mean=pre_mean,
+                    post_mean=post_mean,
+                    detection_lag_ms=0
+                ))
+            t = s
+        
+        return sorted(changepoints, key=lambda cp: cp.timestamp)
+```
+
+### 6.5 互相关延迟分析
+
+**数学原理：**
+
+互相关函数 (Cross-Correlation Function, CCF) 用于发现事件时间序列与赔率变动序列之间的最优延迟：
+
+```
+CCF(τ) = E[(Eₜ - μₑ)(Oₜ₊τ - μₒ)] / (σₑ · σₒ)
+
+其中: Eₜ = 事件信号（事件发生后 = 1, 否则 = 0）
+      Oₜ = 赔率变动信号（Δt 内的对数收益）
+      τ = 延迟（lag）
+```
+
+```python
+import numpy as np
+from scipy import signal
+from dataclasses import dataclass
+from typing import List, Tuple, Optional
+
+@dataclass 
+class LagAnalysisResult:
+    """延迟分析结果"""
+    optimal_lag_seconds: float       # 最优延迟
+    correlation_at_lag: float        # 该延迟下的相关系数
+    significance_p_value: float      # 显著性
+    lag_confidence_interval: Tuple[float, float]  # 95% CI
+    alternative_lags: List[Tuple[float, float]]   # 次要峰值
+
+class CrossCorrelationLagAnalyzer:
+    """
+    互相关延迟分析器
+    
+    在事件发生前后搜索赔率变动的最强响应窗口，
+    确定事件到赔率反应的特征延迟。
+    """
+    
+    def __init__(
+        self,
+        max_lag_seconds: float = 600.0,     # 最大搜索延迟 (10分钟)
+        min_lag_seconds: float = -60.0,     # 最小延迟 (允许前向,检测泄露)
+        significance_level: float = 0.05    # 显著性水平
+    ):
+        self.max_lag = max_lag_seconds
+        self.min_lag = min_lag_seconds
+        self.alpha = significance_level
+    
+    def analyze(
+        self,
+        event_timestamps: List[datetime],
+        odds_timeline: List[Tuple[datetime, float]],  # (timestamp, value)
+        sampling_interval_ms: float = 100.0  # 重采样间隔
+    ) -> LagAnalysisResult:
+        """
+        分析事件序列与赔率序列之间的最优延迟
+        
+        步骤:
+        1. 将两个序列对齐到统一时间网格
+        2. 构建事件信号 (脉冲) 和赔率变动信号 (对数收益)
+        3. 计算互相关函数
+        4. 找到最大相关的延迟
+        5. 评估显著性
+        """
+        
+        # Step 1: 对齐时间网格
+        grid_start = min(
+            min(event_timestamps) - timedelta(seconds=abs(self.min_lag)),
+            odds_timeline[0][0]
+        )
+        grid_end = max(
+            max(event_timestamps) + timedelta(seconds=self.max_lag),
+            odds_timeline[-1][0]
+        )
+        
+        n_points = int((grid_end - grid_start).total_seconds() * 1000 / sampling_interval_ms)
+        time_grid = np.linspace(
+            grid_start.timestamp(), grid_end.timestamp(), n_points
+        )
+        
+        # Step 2a: 构建事件信号
+        event_signal = np.zeros(n_points)
+        for et in event_timestamps:
+            idx = np.argmin(np.abs(time_grid - et.timestamp()))
+            if 0 <= idx < n_points:
+                # 脉冲 + 指数衰减 (模拟事件影响的持续性)
+                decay_tau = 5.0  # 衰减时间常数(秒)
+                for i in range(idx, min(idx + 600, n_points)):  # 最多10分钟
+                    decay = np.exp(-(i - idx) * sampling_interval_ms / 1000 / decay_tau)
+                    if decay < 0.01:
+                        break
+                    event_signal[i] = max(event_signal[i], decay)
+        
+        # Step 2b: 构建赔率变动信号 (对数收益)
+        odds_values = np.interp(time_grid, 
+                                [t.timestamp() for t, _ in odds_timeline],
+                                [v for _, v in odds_timeline])
+        odds_returns = np.diff(np.log(np.maximum(odds_values, 0.001)))
+        odds_returns = np.append(odds_returns, 0)  # 保持长度一致
+        
+        # Step 3: 计算互相关
+        max_lag_points = int(self.max_lag * 1000 / sampling_interval_ms)
+        min_lag_points = int(self.min_lag * 1000 / sampling_interval_ms)
+        
+        lags = np.arange(min_lag_points, max_lag_points + 1)
+        correlations = np.zeros(len(lags))
+        
+        for i, lag in enumerate(lags):
+            if lag >= 0:
+                # odds 滞后于 event
+                corr = np.corrcoef(
+                    event_signal[:n_points - lag] if lag > 0 else event_signal,
+                    odds_returns[lag:]
+                )[0, 1]
+            else:
+                # event 滞后于 odds (负延迟, 检测信息泄露)
+                lag_pos = -lag
+                corr = np.corrcoef(
+                    event_signal[lag_pos:],
+                    odds_returns[:n_points - lag_pos]
+                )[0, 1]
+            correlations[i] = corr if not np.isnan(corr) else 0
+        
+        # Step 4: 找到最优延迟
+        best_idx = np.argmax(np.abs(correlations))
+        best_lag_points = lags[best_idx]
+        best_lag_seconds = best_lag_points * sampling_interval_ms / 1000.0
+        
+        # Step 5: 显著性检验 (基于白噪声假设)
+        # H₀: 相关系数 = 0
+        # t = r * sqrt((n-2)/(1-r²)) ~ t(n-2)
+        r = correlations[best_idx]
+        n_eff = n_points - abs(best_lag_points)
+        if n_eff > 2 and abs(r) < 1:
+            t_stat = r * np.sqrt((n_eff - 2) / (1 - r**2))
+            from scipy.stats import t
+            p_value = 2 * (1 - t.cdf(abs(t_stat), n_eff - 2))
+        else:
+            p_value = 1.0
+        
+        # 置信区间
+        # Fisher Z变换: z = arctanh(r) ≈ N(arctanh(ρ), 1/(n-3))
+        z = np.arctanh(max(min(r, 0.9999), -0.9999))
+        se = 1.0 / np.sqrt(n_eff - 3)
+        z_ci = (z - 1.96 * se, z + 1.96 * se)
+        lag_ci = (
+            best_lag_seconds - 1.96 * sampling_interval_ms / 1000,
+            best_lag_seconds + 1.96 * sampling_interval_ms / 1000
+        )
+        
+        # 次要峰值
+        alt_lags = self._find_secondary_peaks(lags, correlations, best_idx)
+        
+        return LagAnalysisResult(
+            optimal_lag_seconds=best_lag_seconds,
+            correlation_at_lag=correlations[best_idx],
+            significance_p_value=p_value,
+            lag_confidence_interval=lag_ci,
+            alternative_lags=alt_lags
+        )
+    
+    def _find_secondary_peaks(
+        self, lags: np.ndarray, correlations: np.ndarray, 
+        best_idx: int, min_distance: int = 100
+    ) -> List[Tuple[float, float]]:
+        """找次要峰值"""
+        peaks = []
+        sorted_indices = np.argsort(-np.abs(correlations))
+        
+        for idx in sorted_indices:
+            if idx == best_idx:
+                continue
+            if abs(lags[idx] - lags[best_idx]) < min_distance:
+                continue
+            if abs(correlations[idx]) < 0.3:  # 最小阈值
+                continue
+            
+            peaks.append((
+                lags[idx] * 100 / 1000.0,  # 转为秒
+                correlations[idx]
+            ))
+            
+            if len(peaks) >= 3:
+                break
+        
+        return peaks
+```
+
+### 6.6 ML关联模型
+
+```python
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.preprocessing import StandardScaler
+import xgboost as xgb
+
+class MLCorrelationModel:
+    """
+    基于XGBoost的关联预测模型
+    
+    特征工程覆盖四个维度:
+    1. 事件特征 (event_type, severity, entities)
+    2. 赔率上下文 (pre-event trend, volatility, volume)
+    3. 时间特征 (hour_of_day, days_to_match, is_live)
+    4. 市场特征 (bookmaker_count, market_type, spread_width)
+    """
+    
+    # 特征定义
+    FEATURE_COLUMNS = [
+        # === 事件特征 ===
+        "event_severity",              # 事件严重度 1-4
+        "event_type_embedding",        # 事件类型Embedding (PCA→3维)
+        "entity_count",                # 关联实体数
+        "is_live_event",               # 是否为赛中事件
+        
+        # === 赔率上下文 ===
+        "pre_event_trend_slope",       # 事件前趋势斜率 (60s)
+        "pre_event_volatility",        # 事件前波动率
+        "pre_event_volume_zscore",     # 事件前成交量Z-score
+        "odds_level",                  # 当前赔率水平 (1-100)
+        
+        # === 时间特征 ===
+        "hour_of_day_sin",             # 小时 (sin变换, 处理周期)
+        "hour_of_day_cos",
+        "seconds_to_kickoff",          # 距开球秒数
+        "is_in_play",                  # 是否赛中
+        
+        # === 市场特征 ===
+        "bookmaker_count",             # 活跃博彩公司数
+        "bookmaker_dispersion",        # 博彩公司间分歧度
+        "market_type_h2h",             # One-hot: 1X2
+        "market_type_ah",              # One-hot: 亚洲盘
+        "market_type_ou",              # One-hot: 大小球
+        "spread_width",                # 买-卖价差
+    ]
+    
+    def __init__(self):
+        self.model = xgb.XGBClassifier(
+            objective='binary:logistic',
+            max_depth=6,
+            learning_rate=0.05,
+            n_estimators=200,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            min_child_weight=10,
+            scale_pos_weight=3.0,      # 正样本少 (关联事件稀疏)
+            eval_metric=['logloss', 'auc']
+        )
+        self.scaler = StandardScaler()
+        self._fitted = False
+    
+    def extract_features(
+        self,
+        event: EventRecord,
+        odds_timeline: List[OddsRecord],
+        time_context: dict
+    ) -> np.ndarray:
+        """从原始数据提取特征向量"""
+        features = []
+        
+        # 事件特征
+        features.append(event.severity.value)
+        # 事件类型 → 嵌入 (简化: 使用预训练查表)
+        features.extend(self._get_event_embedding(event.event_type))
+        features.append(len(event.entities))
+        features.append(1 if event.event_type in ("goal", "red_card", "penalty_awarded") else 0)
+        
+        # 赔率上下文 (事件发生时间点前后)
+        event_ts = event.timestamp
+        pre_window = [r for r in odds_timeline 
+                      if event_ts - timedelta(seconds=60) <= r.timestamp <= event_ts]
+        post_window = [r for r in odds_timeline
+                       if event_ts < r.timestamp <= event_ts + timedelta(seconds=60)]
+        
+        if pre_window and len(pre_window) >= 3:
+            pre_values = [r.odds_value for r in pre_window]
+            pre_times = np.arange(len(pre_values))
+            slope = np.polyfit(pre_times, pre_values, 1)[0]
+            features.append(slope)
+            features.append(np.std(pre_values) / max(np.mean(pre_values), 0.001))
+            features.append(
+                (np.mean([r.volume or 0 for r in pre_window]) - self.global_mean_volume) 
+                / max(self.global_std_volume, 0.001)
+            )
+        else:
+            features.extend([0, 0, 0])
+        
+        features.append(np.mean([r.odds_value for r in pre_window]) if pre_window else 1.0)
+        
+        # 时间特征
+        hour = event.timestamp.hour
+        features.append(np.sin(2 * np.pi * hour / 24))
+        features.append(np.cos(2 * np.pi * hour / 24))
+        features.append((time_context.get("kickoff", event_ts) - event_ts).total_seconds())
+        features.append(1 if time_context.get("is_live", False) else 0)
+        
+        # 市场特征
+        bookmakers = set(r.bookmaker for r in odds_timeline)
+        features.append(len(bookmakers))
+        features.append(self._calc_dispersion(pre_window) if pre_window else 0)
+        features.append(1 if event.metadata.get("market") == "h2h" else 0)
+        features.append(1 if event.metadata.get("market") == "asian_handicap" else 0)
+        features.append(1 if event.metadata.get("market") == "over_under" else 0)
+        features.append(event.metadata.get("spread_width", 0))
+        
+        return np.array(features, dtype=np.float32)
+    
+    def predict_correlation(
+        self,
+        event: EventRecord,
+        odds_timeline: List[OddsRecord],
+        time_context: dict
+    ) -> Tuple[float, float]:
+        """
+        预测事件与赔率曲线的关联概率
+        
+        Returns:
+            (correlation_probability, confidence)
+        """
+        X = self.extract_features(event, odds_timeline, time_context)
+        X_scaled = self.scaler.transform(X.reshape(1, -1))
+        
+        proba = self.model.predict_proba(X_scaled)[0]
+        correlation_prob = proba[1]  # P(class=1|X)
+        
+        # 置信度基于预测概率的边距
+        margin = abs(correlation_prob - 0.5) * 2
+        confidence = margin
+        
+        return correlation_prob, confidence
+    
+    def _get_event_embedding(self, event_type: str) -> List[float]:
+        """获取事件类型的预训练嵌入向量"""
+        # 实际部署中从向量数据库加载; 此处为静态映射
+        EMBEDDINGS = {
+            "goal": [0.8, 0.1, 0.3],
+            "red_card": [0.7, 0.15, 0.5],
+            "injury_announcement": [0.4, 0.0, 0.2],
+            "yellow_card": [0.2, 0.05, 0.15],
+            "substitution": [0.15, 0.0, 0.1],
+            "transfer_rumor": [0.1, 0.3, 0.05],
+            "manager_change": [0.5, 0.4, 0.3],
+            "starting_xi_announced": [0.3, 0.0, 0.25],
+        }
+        return EMBEDDINGS.get(event_type, [0.0, 0.0, 0.0])
+    
+    def _calc_dispersion(self, window: List[OddsRecord]) -> float:
+        """计算博彩公司间赔率分歧度"""
+        if not window:
+            return 0.0
+        values = [r.odds_value for r in window]
+        return np.std(values) / max(np.mean(values), 0.001) if len(values) > 1 else 0.0
+```
+
+### 6.7 关联评分与排序
+
+**混合评分策略：**
+
+```python
+class CorrelationScorer:
+    """
+    多方法融合的关联评分器
+    
+    综合三种检测方法的输出，生成最终关联分数：
+    Score = w₁ × S_changepoint + w₂ × S_window + w₃ × S_ml
+    
+    权重根据数据质量动态调整：
+    - 高频数据充足 → CUSUM权重高
+    - 数据稀疏 → 事件窗口权重高
+    - 有标记训练数据 → ML权重高
+    """
+    
+    def __init__(self):
+        self.default_weights = {
+            "changepoint": 0.40,
+            "event_window": 0.35,
+            "ml": 0.25
+        }
+    
+    def score(
+        self,
+        changepoint_results: List[ChangepointResult],
+        window_results: List[WindowAnalysisResult],
+        ml_result: Optional[Tuple[float, float]],
+        data_quality: DataQualityProfile
+    ) -> List[CorrelationCandidate]:
+        """
+        综合评分并排序关联候选
+        
+        Args:
+            changepoint_results: CUSUM变点检测结果
+            window_results: 事件窗口分析结果
+            ml_result: ML模型预测 (prob, confidence)
+            data_quality: 数据质量档案
+        Returns:
+            排序后的关联候选列表
+        """
+        
+        # 动态权重调整
+        weights = self._adjust_weights(data_quality)
+        
+        candidates = []
+        
+        for cp in changepoint_results:
+            # 找到时间上最匹配的窗口分析结果
+            matching_window = self._find_matching_window(cp.timestamp, window_results)
+            
+            # 三级评分融合
+            cp_score = cp.confidence * cp.magnitude
+            win_score = matching_window.score if matching_window else 0.0
+            ml_score = ml_result[0] if ml_result else 0.0
+            ml_conf = ml_result[1] if ml_result else 0.0
+            
+            # 融合公式
+            combined_score = (
+                weights["changepoint"] * cp_score +
+                weights["event_window"] * win_score +
+                weights["ml"] * ml_score * ml_conf
+            )
+            
+            # 方向一致性奖励
+            if matching_window and cp.direction == matching_window.direction:
+                combined_score *= 1.1  # +10% 奖励
+            if ml_result and cp.direction == ("up" if ml_result[0] > 0.5 else "down"):
+                combined_score *= 1.05
+            
+            # 幅度-延迟联合评分
+            # 大变动 + 短延迟 = 高可信度
+            latency_factor = self._latency_bonus(matching_window)
+            
+            final_score = combined_score * latency_factor
+            
+            candidates.append(CorrelationCandidate(
+                timestamp=cp.timestamp,
+                score=min(final_score, 1.0),
+                magnitude=cp.magnitude,
+                direction=cp.direction,
+                detection_methods=self._used_methods(cp, matching_window, ml_result),
+                components={
+                    "changepoint_score": cp_score,
+                    "window_score": win_score,
+                    "ml_score": ml_score
+                }
+            ))
+        
+        # 去重: 同一时间窗口内只保留最高分
+        candidates = self._deduplicate_temporal(
+            sorted(candidates, key=lambda c: c.score, reverse=True),
+            window_seconds=30
+        )
+        
+        return candidates
+    
+    def _adjust_weights(self, dq: DataQualityProfile) -> dict:
+        """根据数据质量动态调整权重"""
+        weights = self.default_weights.copy()
+        
+        # 数据密度低 → 降低CUSUM权重
+        if dq.data_density < 0.5:  # 每10秒不足1个tick
+            weights["changepoint"] -= 0.15
+            weights["event_window"] += 0.15
+        
+        # 有充足训练数据 → 提高ML权重
+        if dq.ml_training_samples > 5000:
+            weights["ml"] += 0.10
+            weights["changepoint"] -= 0.05
+            weights["event_window"] -= 0.05
+        
+        # 正常化
+        total = sum(weights.values())
+        return {k: v/total for k, v in weights.items()}
+    
+    def _latency_bonus(self, window_result: Optional[WindowAnalysisResult]) -> float:
+        """延迟奖励因子: 短延迟 → 高可信度"""
+        if not window_result or window_result.lag_seconds is None:
+            return 1.0
+        
+        lag = window_result.lag_seconds
+        
+        if lag <= 30:
+            return 1.3       # 30秒内反应: +30%
+        elif lag <= 120:
+            return 1.15      # 2分钟内: +15%
+        elif lag <= 300:
+            return 1.0       # 5分钟内: 正常
+        elif lag <= 600:
+            return 0.85      # 10分钟: -15%
+        else:
+            return 0.6       # 超过10分钟: -40%
+    
+    def _deduplicate_temporal(
+        self, 
+        candidates: List[CorrelationCandidate], 
+        window_seconds: float
+    ) -> List[CorrelationCandidate]:
+        """时间窗口去重"""
+        kept = []
+        for c in candidates:
+            if not any(
+                abs((c.timestamp - k.timestamp).total_seconds()) < window_seconds
+                for k in kept
+            ):
+                kept.append(c)
+        return kept
+```
+
+### 6.8 关联回测与验证框架
+
+```python
+class CorrelationBacktester:
+    """
+    关联引擎回测框架
+    
+    使用已知关联的历史数据验证引擎准确性:
+    1. 准备标注数据集 (已知事件-赔率关联)
+    2. 运行关联引擎
+    3. 比较检测结果与标注
+    4. 计算 Precision, Recall, F1, MAP
+    """
+    
+    def __init__(self, engine: EventOddsCorrelationEngine):
+        self.engine = engine
+    
+    async def run_backtest(
+        self,
+        test_dataset: List[LabeledMatchData],
+        tolerance_seconds: float = 30.0  # 时间容差
+    ) -> BacktestReport:
+        """
+        运行回测并生成报告
+        
+        Args:
+            test_dataset: 标注数据集
+                - events: 已知事件列表
+                - odds: 完整赔率时间线
+                - labels: 人工标注的真实关联 [(event_id, curve_id, timestamp), ...]
+            tolerance_seconds: 时间容差 (检测时间与标注时间的允许偏差)
+        """
+        all_predictions = []
+        all_labels = []
+        
+        for match_data in test_dataset:
+            # 运行关联检测
+            detected = await self.engine.detect_correlations(
+                events=match_data.events,
+                odds_series=match_data.odds_by_curve,
+                time_window=match_data.time_window,
+                methods=["changepoint", "event_window", "ml"]
+            )
+            
+            # 对齐预测与标注
+            for label in match_data.labels:
+                # 找时间上最接近的检测结果
+                best_match = None
+                best_distance = float('inf')
+                
+                for d in detected:
+                    distance = abs((d.timestamp - label.timestamp).total_seconds())
+                    if distance < tolerance_seconds and distance < best_distance:
+                        # 检查是否匹配同一事件和曲线
+                        if d.event_id == label.event_id and d.curve_id == label.curve_id:
+                            best_match = d
+                            best_distance = distance
+                
+                all_predictions.append(best_match)
+                all_labels.append(label)
+        
+        # 计算指标
+        tp = sum(1 for p, l in zip(all_predictions, all_labels) 
+                 if p is not None and p.correlation_score >= 0.5)
+        fp = len([d for d in all_predictions if d is not None]) - tp  # 简化
+        fn = sum(1 for p in all_predictions if p is None)
+        
+        precision = tp / max(tp + fp, 1)
+        recall = tp / max(tp + fn, 1)
+        f1 = 2 * precision * recall / max(precision + recall, 0.001)
+        
+        return BacktestReport(
+            precision=precision,
+            recall=recall,
+            f1_score=f1,
+            total_matches=len(test_dataset),
+            per_event_type_metrics=self._per_type_metrics(all_predictions, all_labels),
+            latency_metrics=self._latency_metrics(all_predictions, all_labels),
+            confidence_calibration=self._calibration_curve(all_predictions, all_labels)
+        )
+
+class BacktestReport:
+    precision: float
+    recall: float
+    f1_score: float
+    total_matches: int
+    per_event_type_metrics: Dict[str, Dict[str, float]]
+    latency_metrics: Dict[str, float]    # mean, median, p95, p99
+    confidence_calibration: List[Tuple[float, float]]
+```
+
+### 6.9 价值投注检测数学
+
+**数学原理：**
+
+价值投注 (Value Bet) 存在于当模型估计的真实概率高于市场隐含概率时：
+
+```
+Value = P_model(outcome) - P_market(outcome)
++EV = Value > 0
+
+Kelly Criterion 最优投注比例:
+f* = (b × p - q) / b
+其中: b = Decimal Odds - 1
+      p = P_model(outcome)
+      q = 1 - p
+```
+
+```python
+@dataclass
+class ValueBetOpportunity:
+    match_id: str
+    bookmaker: str
+    market: str
+    selection: str
+    market_odds: float              # 市场赔率 (Decimal)
+    market_implied_prob: float       # 市场隐含概率
+    model_prob: float                # 模型概率
+    edge_pct: float                  # 优势百分比
+    kelly_fraction: float            # Kelly最优比例
+    expected_value: float            # 期望收益
+    confidence: float
+    timestamp: datetime
+
+class ValueBetDetector:
+    """
+    价值投注检测器
+    
+    方法:
+    1. 委托-代理模型: 使用博彩公司的平均隐含概率作为"市场共识"
+    2. 识别偏离共识的博彩公司
+    3. 结合团队实力模型 (ELO, 近期战绩, 阵容强度)
+    4. 计算真实概率与市场概率的偏差
+    """
+    
+    def __init__(self, team_model: TeamStrengthModel):
+        self.team_model = team_model
+        self.min_edge = 0.02          # 最小优势 2%
+        self.max_kelly = 0.25         # 最大Kelly比例 (1/4 Kelly)
+    
+    def detect(
+        self,
+        match_id: str,
+        home_team: str,
+        away_team: str,
+        odds_snapshot: List[OddsRecord],  # 最新赔率快照
+    ) -> List[ValueBetOpportunity]:
+        """检测价值投注机会"""
+        
+        # Step 1: 计算模型概率
+        model_probs = self.team_model.predict_match(
+            home_team=home_team,
+            away_team=away_team,
+            context=self._build_context(match_id)
+        )
+        # model_probs = {"home": 0.45, "draw": 0.25, "away": 0.30}
+        
+        opportunities = []
+        
+        # Step 2: 对比每个博彩公司的赔率
+        for bookmaker in self._unique_bookmakers(odds_snapshot):
+            for record in odds_snapshot:
+                if record.bookmaker != bookmaker:
+                    continue
+                
+                # 映射 selection → model outcome
+                outcome = self._map_selection_to_outcome(record.selection)
+                model_prob = model_probs.get(outcome, 0)
+                
+                if model_prob <= 0:
+                    continue
+                
+                # 市场隐含概率 (去margin)
+                market_prob = self._remove_margin(record, odds_snapshot, bookmaker)
+                
+                # 计算优势
+                edge = model_prob - market_prob
+                
+                if edge > self.min_edge:
+                    # Kelly Criterion
+                    b = record.odds_value - 1  # Decimal赔率 → 净赔率
+                    p = model_prob
+                    q = 1 - p
+                    
+                    kelly_full = (b * p - q) / max(b, 0.001)
+                    kelly_fraction = min(kelly_full * 0.25, self.max_kelly)
+                    
+                    # 期望收益
+                    ev = p * (record.odds_value - 1) - (1 - p) * 1
+                    
+                    opportunities.append(ValueBetOpportunity(
+                        match_id=match_id,
+                        bookmaker=bookmaker,
+                        market=record.market,
+                        selection=record.selection,
+                        market_odds=record.odds_value,
+                        market_implied_prob=market_prob,
+                        model_prob=model_prob,
+                        edge_pct=edge * 100,
+                        kelly_fraction=kelly_fraction,
+                        expected_value=ev,
+                        confidence=self._confidence(model_prob, edge),
+                        timestamp=datetime.utcnow()
+                    ))
+        
+        # 按期望价值排序
+        return sorted(opportunities, key=lambda o: o.expected_value, reverse=True)
+    
+    def _remove_margin(
+        self, 
+        record: OddsRecord, 
+        all_records: List[OddsRecord],
+        bookmaker: str
+    ) -> float:
+        """去除博彩公司margin，计算真实隐含概率"""
+        if record.market != "h2h":
+            # 非1X2市场: 直接取倒数
+            return 1.0 / record.odds_value
+        
+        # 1X2市场: 按比例去除margin
+        same_market = [
+            r for r in all_records 
+            if r.bookmaker == bookmaker and r.market == "h2h" and r.match_id == record.match_id
+        ]
+        
+        # 计算margin
+        raw_probs = [1.0 / r.odds_value for r in same_market]
+        margin = sum(raw_probs) - 1.0
+        
+        # 按比例分配margin
+        raw_prob = 1.0 / record.odds_value
+        true_prob = raw_prob / (1.0 + margin)
+        
+        return true_prob
+    
+    def _confidence(self, model_prob: float, edge: float) -> float:
+        """计算置信度"""
+        confidence = 0.5
+        
+        # 概率越极端，模型越确定
+        prob_confidence = abs(model_prob - 0.5) * 2  # 0-1
+        confidence += prob_confidence * 0.3
+        
+        # edge越大越可靠
+        edge_confidence = min(edge / 0.1, 1.0)
+        confidence += edge_confidence * 0.2
+        
+        return min(confidence, 1.0)
+```
+
+### 6.10 蒙特卡洛模拟架构
+
+```python
+@dataclass
+class SimulationConfig:
+    n_simulations: int = 10000
+    random_seed: int = 42
+    include_injuries: bool = True
+    include_form: bool = True
+    include_h2h: bool = True
+    decay_factor: float = 0.85    # 历史权重衰减
+
+class MonteCarloBracketSimulator:
+    """
+    赛事淘汰赛模拟器
+    
+    模拟流程:
+    1. 根据小组赛结果确定淘汰赛对阵
+    2. 对每场比赛采样结果 (基于球队实力+随机扰动)
+    3. 推进胜者进入下一轮
+    4. 重复N次，统计每队各阶段出现频率
+    """
+    
+    def __init__(self, config: SimulationConfig):
+        self.config = config
+        self.rng = np.random.RandomState(config.random_seed)
+    
+    def simulate_tournament(
+        self,
+        bracket: List[List[TeamProfile]],
+        odds_provider: OddsProviderAdapter
+    ) -> SimulationResults:
+        """
+        模拟完整赛事
+        
+        Args:
+            bracket: 淘汰赛对阵表 [[[A1,B2], [C1,D2]], ...]
+            odds_provider: 赔率数据源
+        Returns:
+            模拟结果 (各队夺冠概率、每轮晋级概率)
+        """
+        n_teams = sum(len(m) for match in self._flatten_bracket(bracket) for m in [match])
+        # 每队每轮计数
+        round_counts = {
+            team.id: [0] * self._n_rounds(bracket)
+            for match in self._flatten_bracket(bracket)
+            for team in match
+        }
+        champion_counts = defaultdict(int)
+        
+        for sim in range(self.config.n_simulations):
+            current_round = bracket
+            
+            for round_idx in range(self._n_rounds(bracket)):
+                next_round = []
+                
+                for match_pair in current_round:
+                    winners = []
+                    for match in (match_pair if isinstance(match_pair[0], list) else [match_pair]):
+                        team_a, team_b = match
+                        
+                        # 采样比赛结果
+                        winner = self._sample_match(team_a, team_b, round_idx)
+                        winners.append(winner)
+                        
+                        # 记录晋级
+                        round_counts[winner.id][round_idx] += 1
+                    
+                    next_round.append(winners)
+                
+                current_round = next_round
+            
+            # 冠军
+            champion = current_round[0][0]
+            champion_counts[champion.id] += 1
+        
+        # 计算概率
+        n = self.config.n_simulations
+        return SimulationResults(
+            champion_probs={tid: c/n for tid, c in champion_counts.items()},
+            round_probs={
+                tid: [c/n for c in counts]
+                for tid, counts in round_counts.items()
+            },
+            n_simulations=n
+        )
+    
+    def _sample_match(
+        self, team_a: TeamProfile, team_b: TeamProfile, round_idx: int
+    ) -> TeamProfile:
+        """采样单场比赛结果"""
+        
+        # 基础实力评分 (ELO级别)
+        strength_a = team_a.elo_rating
+        strength_b = team_b.elo_rating
+        
+        # 调整因素
+        if self.config.include_form:
+            strength_a += team_a.recent_form * 50
+            strength_b += team_b.recent_form * 50
+        
+        if self.config.include_injuries:
+            strength_a *= team_a.injury_factor
+            strength_b *= team_b.injury_factor
+        
+        # 主场优势 (中立场地除外)
+        home_advantage = 30 if team_a.is_home else (30 if team_b.is_home else 0)
+        if team_a.is_home:
+            strength_a += home_advantage
+        elif team_b.is_home:
+            strength_b += home_advantage
+        
+        # Logit模型: P(A wins) = 1 / (1 + exp(-(strength_a - strength_b) / scale))
+        strength_diff = (strength_a - strength_b) / 400.0  # ELO标准尺度
+        prob_a = 1.0 / (1.0 + np.exp(-strength_diff * np.log(10)))
+        
+        # 随机采样
+        return team_a if self.rng.random() < prob_a else team_b
+    
+    def _n_rounds(self, bracket) -> int:
+        """计算淘汰赛轮次数"""
+        n = 0
+        current = bracket
+        while isinstance(current, list) and len(current) > 0:
+            n += 1
+            if isinstance(current[0], list):
+                current = current[0]
+            else:
+                break
+        return n
+```
+
+### 6.11 市场效率分析
+
+```python
+class MarketEfficiencyAnalyzer:
+    """
+    市场效率分析器
+    
+    回答核心问题: 事件发生后市场多快完成重新定价？
+    
+    分析维度:
+    1. 定价速度: 事件→赔率稳定的时间
+    2. 定价准确性: 调整后的赔率是否反映真实概率
+    3. 信息泄露: 事件前是否有异常赔率变动
+    """
+    
+    def analyze_event_efficiency(
+        self,
+        event: EventRecord,
+        odds_timeline: List[OddsRecord],
+        final_outcome: Optional[str] = None  # 实际结果
+    ) -> MarketEfficiencyReport:
+        """分析单个事件的市场效率"""
+        
+        event_ts = event.timestamp
+        
+        # 1. 定价速度分析
+        pre_event = [r for r in odds_timeline if r.timestamp < event_ts]
+        post_event = [r for r in odds_timeline if r.timestamp >= event_ts]
+        
+        # 计算赔率稳定时间 (变动幅度 < 0.5% 持续30秒)
+        stability_time = self._find_stability_time(post_event)
+        
+        # 2. 信息泄露检测
+        # 事件前60秒是否有异常变动
+        pre_leak = self._detect_pre_event_leak(pre_event[-60:] if pre_event else [])
+        
+        # 3. 定价幅度
+        if pre_event and post_event:
+            pre_avg = np.mean([r.odds_value for r in pre_event[-10:]])
+            post_stable = self._get_stable_price(post_event)
+            adjustment_pct = (post_stable - pre_avg) / pre_avg * 100
+        else:
+            adjustment_pct = 0
+        
+        # 4. 准确性 (如有实际结果)
+        if final_outcome:
+            post_implied = 1.0 / post_event[-1].odds_value if post_event else None
+            accuracy = 1.0 if (
+                (final_outcome == "home" and adjustment_pct < 0) or
+                (final_outcome == "away" and adjustment_pct > 0)
+            ) else 0.0
+        else:
+            accuracy = None
+        
+        return MarketEfficiencyReport(
+            event_id=event.id,
+            stability_time_seconds=stability_time,
+            adjustment_pct=adjustment_pct,
+            pre_event_leak_detected=pre_leak,
+            pricing_accuracy=accuracy,
+            efficiency_score=self._calc_efficiency_score(
+                stability_time, pre_leak, accuracy
+            )
+        )
+    
+    def _find_stability_time(self, post_events: List[OddsRecord]) -> float:
+        """找到赔率稳定的时间点"""
+        if len(post_events) < 10:
+            return float('inf')
+        
+        values = np.array([r.odds_value for r in post_events])
+        # 滚动标准差
+        window = 10
+        for i in range(window, len(values)):
+            rolling_std = np.std(values[i-window:i]) / np.mean(values[i-window:i])
+            if rolling_std < 0.005:  # 变动 < 0.5%
+                return (post_events[i].timestamp - post_events[0].timestamp).total_seconds()
+        
+        return (post_events[-1].timestamp - post_events[0].timestamp).total_seconds()
+    
+    def _detect_pre_event_leak(self, pre_window: List[OddsRecord]) -> bool:
+        """检测事件前的异常变动（信息泄露）"""
+        if len(pre_window) < 20:
+            return False
+        
+        values = [r.odds_value for r in pre_window]
+        # 检查是否有超过3σ的异常变动
+        returns = np.diff(np.log(values))
+        mean_ret = np.mean(returns)
+        std_ret = np.std(returns)
+        
+        if std_ret == 0:
+            return False
+        
+        z_scores = abs((returns - mean_ret) / std_ret)
+        return any(z > 3.0 for z in z_scores[-10:])  # 最后10个数据点
+    
+    def _calc_efficiency_score(self, stability_time: float, 
+                                 leak: bool, accuracy: Optional[float]) -> float:
+        """综合效率评分 0-100"""
+        score = 100.0
+        
+        # 稳定性时间惩罚
+        if stability_time > 300:
+            score -= 30
+        elif stability_time > 120:
+            score -= 20
+        elif stability_time > 60:
+            score -= 10
+        elif stability_time < 30:
+            score += 10
+        
+        # 信息泄露惩罚
+        if leak:
+            score -= 25
+        
+        # 准确性
+        if accuracy is not None:
+            score += (accuracy - 0.5) * 20
+        
+        return max(0, min(score, 100))
+```
+
+### 6.12 异常检测系统
+
+```python
+class AnomalyDetectionEngine:
+    """
+    多模型异常检测引擎
+    
+    检测场景:
+    1. 无事件驱动的异常赔率变动 (可能: 内幕交易/大额投注)
+    2. 数据源异常行为 (数据延迟/缺失/异常值)
+    3. 博彩公司行为异常 (与其他博彩公司显著分歧)
+    """
+    
+    def __init__(self):
+        # 集成多个检测器
+        self.detectors = [
+            IsolationForestDetector(),       # 自适应性好
+            RollingStatsDetector(),          # 解释性强
+            BookmakerConsensusDetector(),    # 跨博彩公司
+        ]
+    
+    async def detect_anomalies(
+        self,
+        odds_timeline: List[OddsRecord],
+        events: List[EventRecord],
+        time_window: Tuple[datetime, datetime]
+    ) -> List[AnomalyAlert]:
+        """检测异常"""
+        alerts = []
+        
+        # 1. 无事件异常变动检测
+        event_timestamps = {e.timestamp for e in events}
+        for detector in self.detectors[:2]:
+            anomalies = await detector.detect(odds_timeline)
+            for anomaly in anomalies:
+                # 检查是否有对应事件
+                has_event = any(
+                    abs((anomaly.timestamp - et).total_seconds()) < 120
+                    for et in event_timestamps
+                )
+                if not has_event:
+                    alerts.append(AnomalyAlert(
+                        type="unexplained_movement",
+                        timestamp=anomaly.timestamp,
+                        magnitude=anomaly.magnitude,
+                        direction=anomaly.direction,
+                        bookmaker=anomaly.bookmaker,
+                        message=f"检测到未关联事件的异常赔率变动: "
+                                f"{anomaly.magnitude*100:.1f}% {anomaly.direction}"
+                    ))
+        
+        # 2. 博彩公司分歧检测
+        consensus_alerts = await self.detectors[2].detect(odds_timeline)
+        alerts.extend(consensus_alerts)
+        
+        return sorted(alerts, key=lambda a: a.timestamp, reverse=True)
+
+class RollingStatsDetector:
+    """基于滚动统计的异常检测"""
+    
+    def __init__(self, window_size: int = 60, z_threshold: float = 3.5):
+        self.window_size = window_size
+        self.z_threshold = z_threshold
+    
+    async def detect(self, timeline: List[OddsRecord]) -> List[AnomalyPoint]:
+        """基于滚动Z-score的异常检测"""
+        anomalies = []
+        values = np.array([r.odds_value for r in timeline])
+        
+        if len(values) < self.window_size:
+            return anomalies
+        
+        for i in range(self.window_size, len(values)):
+            window = values[i-self.window_size:i]
+            mean = np.mean(window)
+            std = np.std(window)
+            
+            if std < 1e-6:
+                continue
+            
+            z_score = (values[i] - mean) / std
+            
+            if abs(z_score) > self.z_threshold:
+                anomalies.append(AnomalyPoint(
+                    timestamp=timeline[i].timestamp,
+                    magnitude=abs(values[i] - mean) / mean,
+                    direction="up" if values[i] > mean else "down",
+                    z_score=z_score,
+                    bookmaker=timeline[i].bookmaker
+                ))
+        
+        return anomalies
+
+class BookmakerConsensusDetector:
+    """博彩公司共识分歧检测"""
+    
+    async def detect(self, timeline: List[OddsRecord]) -> List[AnomalyAlert]:
+        """
+        检测与市场共识显著偏离的博彩公司
+        
+        方法: 对每个时间点，计算跨博彩公司的赔率分布，
+        标记偏离中位数超过3倍MAD的博彩公司。
+        """
+        alerts = []
+        
+        # 按时间窗口分组
+        groups = self._group_by_time_window(timeline, window_seconds=30)
+        
+        for ts, records in groups.items():
+            if len(records) < 5:  # 需要至少5家博彩公司
+                continue
+            
+            values = np.array([r.odds_value for r in records])
+            median = np.median(values)
+            mad = np.median(np.abs(values - median))
+            
+            if mad < 1e-6:
+                continue
+            
+            for r in records:
+                z_score_mad = 0.6745 * (r.odds_value - median) / mad
+                if abs(z_score_mad) > 3.5:
+                    alerts.append(AnomalyAlert(
+                        type="bookmaker_divergence",
+                        timestamp=ts,
+                        magnitude=abs(r.odds_value - median) / median,
+                        direction="up" if r.odds_value > median else "down",
+                        bookmaker=r.bookmaker,
+                        message=f"{r.bookmaker} 显著偏离共识 ({z_score_mad:.1f}σ)"
+                    ))
+        
+        return alerts
+```
 
 
 ## 七、用户交互层
@@ -471,6 +2866,787 @@ const oddsSourceSelector = {
 | 时间轴 | D3.js / Vis.js | 灵活的事件时间轴渲染 |
 | 状态管理 | Zustand / Redux Toolkit | 多数据源状态管理 |
 | API通信 | GraphQL (Apollo) | 灵活的数据查询，前端可按需获取字段 |
+
+### 7.4 前端数据流架构
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                      前端数据流架构                                   │
+│                                                                      │
+│  ┌──────────────────────────────────────────────────────────────┐    │
+│  │                    State Layer (Zustand)                      │    │
+│  │                                                               │    │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐ │    │
+│  │  │chartSlice│  │eventSlice│  │filterSlice│  │uiSlice       │ │    │
+│  │  │          │  │          │  │          │  │              │ │    │
+│  │  │ curves[] │  │ events[] │  │ timeRange│  │ selectedPoint│ │    │
+│  │  │ dataPoints│ │ types[] │  │ providers│  │ hoveredEvent  │ │    │
+│  │  │ loading  │  │ severity│  │ bookmakers│  │ panelLayout  │ │    │
+│  │  └────┬─────┘  └────┬─────┘  └────┬─────┘  └──────┬───────┘ │    │
+│  └───────┼─────────────┼─────────────┼───────────────┼──────────┘    │
+│          │             │             │               │               │
+│  ┌───────▼─────────────▼─────────────▼───────────────▼──────────┐    │
+│  │                    Data Access Layer                          │    │
+│  │                                                               │    │
+│  │  ┌───────────────┐  ┌──────────────┐  ┌───────────────┐     │    │
+│  │  │ GraphQL       │  │ WebSocket    │  │ Cache (LRU)   │     │    │
+│  │  │ (Apollo)      │  │ (Realtime)   │  │ (500MB)       │     │    │
+│  │  │               │  │              │  │               │     │    │
+│  │  │ Queries       │  │ Subscriptions│  │ TTL-based     │     │    │
+│  │  │ - oddsTimeline│  │ - oddsUpdated│  │ invalidation  │     │    │
+│  │  │ - events      │  │ - eventDetect│  │               │     │    │
+│  │  │ - correlations│  │ - anomaly    │  │               │     │    │
+│  │  └───────────────┘  └──────────────┘  └───────────────┘     │    │
+│  └──────────────────────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+**核心状态管理（Zustand Store）：**
+
+```typescript
+// store/chartSlice.ts
+interface ChartState {
+  // 曲线定义
+  curves: CurveDefinition[];
+  
+  // 数据缓存 (按 curveId → timeRange 索引)
+  dataCache: Map<string, Map<string, OddsPoint[]>>;
+  
+  // 加载状态
+  loadingCurves: Set<string>;
+  loadingProgress: Map<string, number>;  // 0-100
+  
+  // 视图状态
+  timeRange: { start: Date; end: Date };
+  viewport: { xMin: number; xMax: number; yMin: number; yMax: number };
+  
+  // 选中的点
+  selectedPoint: { curveId: string; timestamp: Date; value: number } | null;
+  
+  // 标注
+  annotations: Map<string, EventAnnotation[]>;  // curveId → annotations
+  
+  // Actions
+  addCurve: (config: CurveConfigInput) => Promise<void>;
+  removeCurve: (curveId: string) => void;
+  updateTimeRange: (range: { start: Date; end: Date }) => void;
+  fetchData: (curveId: string, range: TimeRange) => Promise<void>;
+  setSelectedPoint: (point: SelectedPoint | null) => void;
+}
+
+// store/eventSlice.ts
+interface EventState {
+  events: EventRecord[];
+  selectedEventTypes: Set<string>;
+  selectedSeverities: Set<EventSeverity>;
+  hoveredEventId: string | null;
+  pinnedEvents: Set<string>;  // 钉选的事件（始终显示）
+  
+  // Actions
+  fetchEvents: (range: TimeRange) => Promise<void>;
+  toggleEventType: (eventType: string) => void;
+  setHoveredEvent: (eventId: string | null) => void;
+  pinEvent: (eventId: string) => void;
+  unpinEvent: (eventId: string) => void;
+}
+
+// store/correlationSlice.ts
+interface CorrelationState {
+  correlations: Map<string, EventOddsCorrelation[]>;  // curveId → correlations
+  selectedCorrelation: EventOddsCorrelation | null;
+  showCorrelationLines: boolean;  // 是否显示事件-曲线连接线
+  
+  // Actions
+  fetchCorrelations: (curveIds: string[], range: TimeRange) => Promise<void>;
+  selectCorrelation: (correlation: EventOddsCorrelation | null) => void;
+}
+```
+
+### 7.5 交互状态机
+
+```
+用户交互状态机:
+
+                    ┌──────────────────────────────────────────┐
+                    │             IDLE (默认浏览)               │
+                    │  - 显示所有曲线 + 事件标注               │
+                    │  - 支持缩放/平移                         │
+                    └─────┬──────┬──────┬──────┬──────────────┘
+                          │      │      │      │
+              点击数据点   │      │悬停事件│      │ 选择时间区间
+                          ▼      │      ▼      │        ▼
+              ┌──────────────┐   │  ┌──────────────┐  ┌──────────────┐
+              │ POINT_SELECT │   │  │ EVENT_HOVER  │  │ RANGE_SELECT │
+              │              │   │  │              │  │              │
+              │ 显示该点详情 │   │  │ 高亮关联曲线 │  │ 框选放大     │
+              │ 高亮关联事件 │   │  │ 显示事件卡片 │  │ 更新区间     │
+              │ 十字线联动   │   │  │ 淡化其他     │  │              │
+              └──────┬───────┘   │  └──────┬───────┘  └──────┬───────┘
+                     │           │         │                 │
+              点击其他│   点击    │  移开   │          释放   │
+                    ─┼─ 空白     │  ───────┼──              ─┼──
+                     │           │         │                 │
+                     ▼           │         ▼                 ▼
+              ┌──────────────┐   │  ┌──────────────┐  ┌──────────────┐
+              │ DETAIL_PANEL │◀──┘  │ IDLE          │  │ IDLE         │
+              │              │      │ (恢复默认)    │  │ (新视口)     │
+              │ 事件详情     │      └──────────────┘  └──────────────┘
+              │ 关联曲线     │
+              │ 变点信息     │
+              │ 数据导出     │
+              └──────────────┘
+
+状态转换规则:
+  - 悬停事件时: 关联曲线高亮 + 显示Tooltip, 不影响其他曲线可见性
+  - 点击事件时: 锁定详情面板, 显示完整关联信息, 其他曲线淡化(opacity=0.1)
+  - 点击曲线点时: 双向联动 —— 高亮该时间点附近的关联事件
+  - 框选区间时: 更新 timeRange, 触发数据重新加载
+```
+
+**状态机实现：**
+
+```typescript
+// hooks/useInteractionState.ts
+type InteractionState = 
+  | { type: 'IDLE' }
+  | { type: 'EVENT_HOVER'; eventId: string; position: { x: number; y: number } }
+  | { type: 'POINT_SELECT'; curveId: string; timestamp: Date; value: number }
+  | { type: 'RANGE_SELECT'; startX: number; currentX: number }
+  | { type: 'DETAIL_PANEL'; eventId: string; correlationIds: string[] };
+
+function useInteractionReducer() {
+  const [state, dispatch] = useReducer(interactionReducer, { type: 'IDLE' });
+  
+  const actions = {
+    hoverEvent: (eventId: string, pos: { x: number; y: number }) =>
+      dispatch({ type: 'HOVER_EVENT', eventId, pos }),
+    
+    unhoverEvent: () =>
+      dispatch({ type: 'UNHOVER' }),
+    
+    clickPoint: (curveId: string, ts: Date, value: number) =>
+      dispatch({ type: 'CLICK_POINT', curveId, ts, value }),
+    
+    clickEvent: (eventId: string, corrIds: string[]) =>
+      dispatch({ type: 'CLICK_EVENT', eventId, corrIds }),
+    
+    startRangeSelect: (x: number) =>
+      dispatch({ type: 'START_RANGE', x }),
+    
+    updateRangeSelect: (x: number) =>
+      dispatch({ type: 'UPDATE_RANGE', x }),
+    
+    endRangeSelect: () =>
+      dispatch({ type: 'END_RANGE' }),
+    
+    clearSelection: () =>
+      dispatch({ type: 'CLEAR' }),
+  };
+  
+  return { state, ...actions };
+}
+
+function interactionReducer(
+  state: InteractionState,
+  action: InteractionAction
+): InteractionState {
+  switch (action.type) {
+    case 'HOVER_EVENT':
+      return { 
+        type: 'EVENT_HOVER', 
+        eventId: action.eventId, 
+        position: action.pos 
+      };
+    
+    case 'UNHOVER':
+      return state.type === 'EVENT_HOVER' 
+        ? { type: 'IDLE' } 
+        : state;
+    
+    case 'CLICK_POINT':
+      return {
+        type: 'POINT_SELECT',
+        curveId: action.curveId,
+        timestamp: action.ts,
+        value: action.value
+      };
+    
+    case 'CLICK_EVENT':
+      return {
+        type: 'DETAIL_PANEL',
+        eventId: action.eventId,
+        correlationIds: action.corrIds
+      };
+    
+    case 'START_RANGE':
+      return { 
+        type: 'RANGE_SELECT', 
+        startX: action.x, 
+        currentX: action.x 
+      };
+    
+    case 'UPDATE_RANGE':
+      return state.type === 'RANGE_SELECT'
+        ? { ...state, currentX: action.x }
+        : state;
+    
+    case 'END_RANGE':
+      // Range selection completed → triggers timeRange update → returns to IDLE
+      return { type: 'IDLE' };
+    
+    case 'CLEAR':
+      return { type: 'IDLE' };
+    
+    default:
+      return state;
+  }
+}
+```
+
+### 7.6 图表渲染管道
+
+```
+渲染管道 (ECharts 集成):
+
+  数据 ──▶ 数据预处理 ──▶ 坐标映射 ──▶ Canvas渲染 ──▶ 交互层
+           │                │           │              │
+           ▼                ▼           ▼              ▼
+      - 重采样           - 线性      - 曲线         - 事件标记
+        (LTTB降采样)       - 对数      - 网格         - 十字线
+      - 缺失值插值       - 时间      - 坐标轴       - Tooltip
+      - 格式统一                          - 图例     - 缩放条
+```
+
+**LTTB降采样算法（保留视觉特征的降采样）：**
+
+```typescript
+// utils/downsample.ts
+/**
+ * Largest Triangle Three Buckets (LTTB) 降采样
+ * 将百万级数据点降至数千点用于渲染，同时保留视觉趋势特征
+ * 
+ * 算法复杂度: O(n)
+ * 
+ * 原理: 将数据等分为N个桶，每个桶取能形成最大三角形的点
+ */
+function lttb(
+  data: Array<[number, number]>,  // [timestamp_ms, value]
+  targetPoints: number
+): Array<[number, number]> {
+  const dataLength = data.length;
+  
+  if (dataLength <= targetPoints) {
+    return data;
+  }
+  
+  const result: Array<[number, number]> = [];
+  // 总是保留第一个点
+  result.push(data[0]);
+  
+  const bucketSize = (dataLength - 2) / (targetPoints - 2);
+  
+  let a = 0;  // 上一个选中点
+  
+  for (let i = 0; i < targetPoints - 2; i++) {
+    // 计算当前桶的范围
+    const bucketStart = Math.floor((i + 1) * bucketSize) + 1;
+    const bucketEnd = Math.floor((i + 2) * bucketSize) + 1;
+    const avgBucketEnd = Math.min(bucketEnd, dataLength - 1);
+    
+    // 计算下一个桶的平均点 (用于三角形面积)
+    const nextBucketStart = Math.floor((i + 2) * bucketSize) + 1;
+    const nextBucketEnd = Math.floor((i + 3) * bucketSize) + 1;
+    const nextBucketAvg = averagePoint(data, nextBucketStart, Math.min(nextBucketEnd, dataLength));
+    
+    // 在当前桶中找到形成最大三角形的点
+    let maxArea = -1;
+    let maxAreaPoint = bucketStart;
+    
+    for (let j = bucketStart; j < avgBucketEnd; j++) {
+      const area = triangleArea(
+        data[a], data[j], nextBucketAvg
+      );
+      if (area > maxArea) {
+        maxArea = area;
+        maxAreaPoint = j;
+      }
+    }
+    
+    result.push(data[maxAreaPoint]);
+    a = maxAreaPoint;
+  }
+  
+  // 总是保留最后一个点
+  result.push(data[dataLength - 1]);
+  
+  return result;
+}
+
+function triangleArea(
+  p1: [number, number],
+  p2: [number, number],
+  p3: [number, number]
+): number {
+  return Math.abs(
+    (p1[0] - p3[0]) * (p2[1] - p1[1]) - 
+    (p1[0] - p2[0]) * (p3[1] - p1[1])
+  ) * 0.5;
+}
+
+function averagePoint(
+  data: Array<[number, number]>,
+  start: number,
+  end: number
+): [number, number] {
+  let sumX = 0, sumY = 0;
+  const count = Math.min(end - start, 1);
+  if (count <= 0) return data[start] || [0, 0];
+  
+  const actualEnd = Math.min(end, data.length);
+  for (let i = start; i < actualEnd; i++) {
+    sumX += data[i][0];
+    sumY += data[i][1];
+  }
+  return [sumX / count, sumY / count];
+}
+```
+
+**ECharts集成组件：**
+
+```typescript
+// components/OddsChart.tsx
+interface OddsChartProps {
+  curves: CurveDefinition[];
+  dataCache: Map<string, OddsPoint[]>;
+  annotations: Map<string, EventAnnotation[]>;
+  timeRange: { start: Date; end: Date };
+  viewport: Viewport;
+  interactionState: InteractionState;
+  onPointClick: (curveId: string, ts: Date, value: number) => void;
+  onEventClick: (eventId: string) => void;
+  onViewportChange: (viewport: Viewport) => void;
+}
+
+function OddsChart({ curves, dataCache, annotations, ...props }: OddsChartProps) {
+  const chartRef = useRef<echarts.ECharts>();
+  
+  // 构建ECharts配置
+  const option = useMemo(() => ({
+    // 多X轴 (时间) + 多Y轴 (如需要)
+    xAxis: {
+      type: 'time',
+      min: props.timeRange.start.getTime(),
+      max: props.timeRange.end.getTime(),
+      axisLabel: { formatter: '{HH}:{mm}:{ss}' }
+    },
+    yAxis: {
+      type: 'value',
+      name: '赔率 (Decimal)',
+      axisLabel: { formatter: '{value}' }
+    },
+    
+    // 曲线系列
+    series: [
+      ...curves.map((curve, i) => {
+        const data = dataCache.get(curve.id) || [];
+        const downsampled = lttb(
+          data.map(p => [p.timestamp.getTime(), p.value] as [number, number]),
+          2000  // 渲染目标点数
+        );
+        
+        return {
+          type: 'line',
+          name: curve.name,
+          data: downsampled,
+          smooth: true,
+          symbol: 'none',  // 不显示数据点符号 (性能优化)
+          lineStyle: { width: 2, color: CURVE_COLORS[i % CURVE_COLORS.length] },
+          // 事件标注 (markPoint)
+          markPoint: {
+            data: (annotations.get(curve.id) || []).map(a => ({
+              name: a.title,
+              coord: [a.timestamp.getTime(), a.relatedPoint?.value || 0],
+              symbol: 'pin',
+              symbolSize: 20,
+              itemStyle: { color: SEVERITY_COLORS[a.severity] },
+              // 点击事件
+              onClick: () => props.onEventClick(a.eventId)
+            }))
+          }
+        };
+      }),
+      
+      // 竖线标注 (事件时间线)
+      {
+        type: 'lines',
+        coordinateSystem: 'cartesian2d',
+        polyline: false,
+        data: getEventVerticalLines(annotations),
+        lineStyle: { type: 'dashed', color: '#999', width: 1 }
+      }
+    ],
+    
+    // 交互配置
+    dataZoom: [
+      { type: 'inside', start: 0, end: 100 },     // 滚轮缩放
+      { type: 'slider', start: 0, end: 100, height: 30 }  // 底部滑块
+    ],
+    toolbox: {
+      feature: {
+        dataZoom: { yAxisIndex: 'none' },
+        restore: {},
+        saveAsImage: { pixelRatio: 2 }
+      }
+    },
+    tooltip: {
+      trigger: 'axis',
+      formatter: (params: any) => {
+        // 自定义Tooltip: 显示选中点 + 关联事件
+        return formatTooltipWithEvents(params, annotations);
+      }
+    }
+  }), [curves, dataCache, annotations, props.timeRange]);
+  
+  return <EChartsReact ref={chartRef} option={option} 
+    style={{ height: '100%', width: '100%' }}
+    onEvents={{
+      click: handleClick,
+      datazoom: handleZoom
+    }}
+  />;
+}
+```
+
+### 7.7 事件-曲线关联可视化
+
+**双向联动机制：**
+
+```typescript
+// hooks/useEventCurveLinking.ts
+/**
+ * 事件-曲线联动Hook
+ * 
+ * 实现三种联动:
+ * 1. 悬停事件 → 对应曲线点高亮
+ * 2. 点击曲线点 → 关联事件高亮
+ * 3. 框选区间 → 区间内事件计数与高亮
+ */
+function useEventCurveLinking(
+  chartRef: RefObject<echarts.ECharts>,
+  eventTimelineRef: RefObject<EventTimelineHandle>,
+  correlationState: CorrelationState,
+  interactionState: InteractionState
+) {
+  // 联动1: 悬停事件 → 曲线高亮
+  useEffect(() => {
+    if (interactionState.type !== 'EVENT_HOVER') return;
+    
+    const { eventId } = interactionState;
+    const correlations = findCorrelationsForEvent(eventId, correlationState);
+    
+    if (correlations.length > 0 && chartRef.current) {
+      // 在曲线上高亮关联点
+      chartRef.current.dispatchAction({
+        type: 'highlight',
+        seriesIndex: correlations.map(c => c.curveId)
+      });
+      
+      // 显示十字线对准事件时间
+      const event = getEventById(eventId);
+      if (event) {
+        chartRef.current.dispatchAction({
+          type: 'showTip',
+          seriesIndex: 0,
+          dataIndex: findNearestDataIndex(event.timestamp)
+        });
+      }
+    }
+  }, [interactionState]);
+  
+  // 联动2: 点击曲线点 → 查找关联事件
+  const handleChartClick = useCallback((params: any) => {
+    if (!params.data) return;
+    
+    const clickedTime = new Date(params.data[0]);
+    // 在时间窗口中搜索关联事件
+    const nearbyEvents = findEventsInWindow(
+      clickedTime, 
+      WINDOW_SECONDS, 
+      correlationState
+    );
+    
+    if (nearbyEvents.length > 0) {
+      // 通知事件时间轴滚动到对应位置
+      eventTimelineRef.current?.scrollToTime(clickedTime);
+      // 高亮关联事件
+      eventTimelineRef.current?.highlightEvents(nearbyEvents.map(e => e.id));
+    }
+  }, [correlationState]);
+  
+  // 联动3: 框选区间 → 事件计数
+  const handleZoomChange = useCallback((start: Date, end: Date) => {
+    const eventsInRange = countEventsInRange(start, end);
+    // 更新事件密度指示器
+    dispatch({ type: 'UPDATE_EVENT_DENSITY', count: eventsInRange });
+  }, []);
+  
+  return { handleChartClick, handleZoomChange };
+}
+```
+
+### 7.8 高级筛选与钻取
+
+**筛选器架构：**
+
+```typescript
+// components/filters/FilterEngine.ts
+interface FilterState {
+  // 时间维度
+  timeRange: { start: Date; end: Date };
+  matchPhase: 'pre_match' | 'in_play' | 'post_match' | 'all';
+  
+  // 赔率维度
+  providers: Set<string>;        // 数据源
+  bookmakers: Set<string>;       // 博彩公司
+  markets: Set<string>;          // 市场类型
+  oddsRange: { min: number; max: number };  // 赔率范围
+  
+  // 事件维度
+  eventTypes: Set<string>;
+  severities: Set<number>;
+  confidence: { min: number; max: number };
+  
+  // 关联维度
+  correlationStrength: { min: number };  // 最小关联强度
+  lagRange: { min: number; max: number };  // 延迟范围
+  direction: 'up' | 'down' | 'both';
+}
+
+// 筛选器编译为GraphQL查询
+function compileFilterToQuery(filter: FilterState): FilterQuery {
+  return {
+    oddsInput: {
+      timeRange: filter.timeRange,
+      providers: [...filter.providers],
+      bookmakers: [...filter.bookmakers],
+      markets: [...filter.markets],
+      oddsValueRange: filter.oddsRange
+    },
+    eventInput: {
+      timeRange: filter.timeRange,
+      eventTypes: [...filter.eventTypes],
+      severities: [...filter.severities],
+      minConfidence: filter.confidence.min
+    },
+    correlationInput: {
+      minScore: filter.correlationStrength.min,
+      lagRange: filter.lagRange,
+      direction: filter.direction === 'both' ? undefined : filter.direction
+    }
+  };
+}
+
+// 筛选器历史 (支持撤销/重做)
+interface FilterHistory {
+  past: FilterState[];
+  present: FilterState;
+  future: FilterState[];
+  
+  push: (state: FilterState) => void;
+  undo: () => FilterState | null;
+  redo: () => FilterState | null;
+}
+```
+
+**钻取路径：**
+
+```
+钻取层级:
+
+  Level 0: 赛事全景
+  │  多条曲线叠加，所有事件标注
+  │
+  ├── Level 1: 单事件钻取
+  │   │  点击事件 → Detail Panel
+  │   │  显示: 事件详情、关联曲线、延迟、幅度
+  │   │
+  │   └── Level 2: 时间微钻取
+  │       │  展开事件前后30秒的逐tick数据
+  │       │  显示: 每个tick的赔率值、博彩公司、时间戳
+  │       │
+  │       └── Level 3: 博彩公司对比
+  │           对比不同博彩公司对该事件的反应速度和幅度
+  │
+  ├── Level 1: 曲线分析钻取
+  │   │  点击曲线区域 → 统计面板
+  │   │  显示: 均值、波动率、变点分布
+  │   │
+  │   └── Level 2: 变点列表
+  │       所有检测到的变点，按置信度排序
+  │
+  └── Level 1: 数据源对比钻取
+      同一曲线在不同数据源下的表现差异
+```
+
+### 7.9 Jupyter Notebook 集成
+
+```python
+# analysis/notebook_api.py
+"""
+Jupyter Notebook 分析接口
+
+提供 Python API 供 Notebook 环境使用，
+支持编程式数据查询、关联分析、可视化。
+"""
+
+class NotebookAnalysisAPI:
+    """Notebook 分析 API"""
+    
+    def __init__(self, api_url: str = "http://localhost:4000/graphql"):
+        self.client = GraphQLClient(api_url)
+    
+    def query_odds(
+        self,
+        match_id: str,
+        time_range: Tuple[str, str],
+        bookmakers: Optional[List[str]] = None,
+        markets: Optional[List[str]] = None
+    ) -> pd.DataFrame:
+        """查询赔率数据并返回Pandas DataFrame"""
+        query = """
+        query OddsTimeline($input: OddsTimelineInput!) {
+          oddsTimeline(input: $input) {
+            dataPoints {
+              timestamp
+              value
+              bookmaker
+              market
+              selection
+              impliedProbability
+            }
+          }
+        }
+        """
+        result = self.client.execute(query, variables={
+            "input": {
+                "matchId": match_id,
+                "timeRange": {
+                    "start": time_range[0],
+                    "end": time_range[1]
+                },
+                "bookmakers": bookmakers,
+                "markets": markets
+            }
+        })
+        
+        df = pd.DataFrame(result["oddsTimeline"]["dataPoints"])
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df.set_index("timestamp", inplace=True)
+        return df
+    
+    def query_events(
+        self,
+        match_id: Optional[str] = None,
+        time_range: Optional[Tuple[str, str]] = None,
+        event_types: Optional[List[str]] = None
+    ) -> pd.DataFrame:
+        """查询事件数据"""
+        ...
+    
+    def detect_correlations(
+        self,
+        events: List[str],  # event_ids
+        odds_curve_id: str,
+        methods: List[str] = ["changepoint", "event_window"]
+    ) -> pd.DataFrame:
+        """运行关联检测"""
+        ...
+    
+    def plot_with_events(
+        self,
+        odds_df: pd.DataFrame,
+        events_df: pd.DataFrame,
+        correlations_df: pd.DataFrame,
+        title: str = "赔率-事件关联图"
+    ) -> None:
+        """
+        快速绘制赔率曲线 + 事件标注
+        
+        使用 Plotly 在 Notebook 中内嵌交互式图表
+        """
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+        
+        fig = make_subplots(
+            rows=2, cols=1,
+            row_heights=[0.7, 0.3],
+            shared_xaxes=True,
+            vertical_spacing=0.05
+        )
+        
+        # 赔率曲线
+        for bookmaker in odds_df["bookmaker"].unique():
+            bm_data = odds_df[odds_df["bookmaker"] == bookmaker]
+            fig.add_trace(
+                go.Scatter(
+                    x=bm_data.index,
+                    y=bm_data["value"],
+                    mode="lines",
+                    name=f"{bookmaker}",
+                    hovertemplate="%{x}<br>赔率: %{y:.3f}<extra></extra>"
+                ),
+                row=1, col=1
+            )
+        
+        # 事件标注
+        for _, corr in correlations_df.iterrows():
+            fig.add_vline(
+                x=corr["timestamp"],
+                line_dash="dash",
+                line_color="red",
+                opacity=0.5,
+                annotation_text=corr["event_type"],
+                row=1, col=1
+            )
+        
+        # 事件时间轴
+        for _, event in events_df.iterrows():
+            fig.add_trace(
+                go.Scatter(
+                    x=[event["timestamp"], event["timestamp"]],
+                    y=[0, event["severity"]],
+                    mode="lines+markers",
+                    name=event["title"],
+                    marker=dict(size=8),
+                    hovertemplate=event["title"]
+                ),
+                row=2, col=1
+            )
+        
+        fig.update_layout(
+            title=title,
+            height=700,
+            hovermode="x unified"
+        )
+        fig.show()
+    
+    def find_value_bets(
+        self,
+        match_ids: List[str],
+        min_edge_pct: float = 2.0
+    ) -> pd.DataFrame:
+        """扫描价值投注机会"""
+        ...
+    
+    def simulate_tournament(
+        self,
+        bracket_template: str = "world_cup_2026",
+        n_simulations: int = 10000,
+        progress_bar: bool = True
+    ) -> pd.DataFrame:
+        """运行蒙特卡洛模拟"""
+        ...
+```
 
 
 ## 八、技术栈总览
