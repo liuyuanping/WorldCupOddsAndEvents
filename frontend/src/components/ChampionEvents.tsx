@@ -1,5 +1,5 @@
 /* ── Event Feed ──────────────────────────────────────── */
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useAppStore } from "../store/useAppStore";
 import { SEVERITY_COLORS, SEVERITY_LABELS, getTeamColor } from "../types";
 
@@ -31,28 +31,30 @@ export default function ChampionEvents() {
 
   // Default to first filtered event, or keep selected if still valid
   const displayEvent = selectedEvent || filteredEvents[0] || null;
+  const [searchEngine, setSearchEngine] = useState("baidu");
+
+  const searchEngines: Record<string, string> = {
+    baidu: "https://www.baidu.com/s?wd=",
+    google: "https://www.google.com/search?q=",
+    sogou: "https://www.sogou.com/web?query=",
+  };
+
+  const handleTitleClick = () => {
+    if (!displayEvent) return;
+    if (displayEvent.source_url) {
+      window.open(displayEvent.source_url, "_blank", "noopener");
+    } else {
+      const query = encodeURIComponent(displayEvent.title);
+      window.open(searchEngines[searchEngine] + query, "_blank", "noopener");
+    }
+  };
 
   return (
     <div className="panel events-panel">
       <h3>📰 球队事件</h3>
 
       {/* Fixed height detail area — always visible */}
-      <div
-        className="event-detail-popup"
-        onClick={() => {
-          if (displayEvent?.source_url) {
-            window.open(displayEvent.source_url, "_blank", "noopener");
-          } else if (displayEvent) {
-            // Fallback: search for the event on Polymarket
-            window.open(
-              `https://polymarket.com/search?query=${encodeURIComponent(displayEvent.title)}`,
-              "_blank",
-              "noopener"
-            );
-          }
-        }}
-        title={displayEvent?.source_url ? "点击打开原始链接" : "点击搜索相关新闻"}
-      >
+      <div className="event-detail-popup">
         {displayEvent ? (
           <>
             <div className="popup-header">
@@ -66,12 +68,30 @@ export default function ChampionEvents() {
                 {SEVERITY_LABELS[displayEvent.severity]}
               </span>
             </div>
-            <h4>{displayEvent.title}</h4>
+            <h4
+              onClick={handleTitleClick}
+              title={displayEvent.source_url ? "打开原始链接" : `用${searchEngine}搜索`}
+              style={{ cursor: "pointer", textDecoration: "underline dotted" }}
+            >
+              {displayEvent.title}
+            </h4>
             <p className="popup-desc">{displayEvent.description || "暂无详细描述"}</p>
             <div className="popup-meta">
               <span>类型: {displayEvent.event_type}</span>
               <span>来源: Mock Event Provider</span>
               <span>{new Date(displayEvent.timestamp).toLocaleString("zh-CN")}</span>
+              {!displayEvent.source_url && (
+                <select
+                  className="search-engine-select"
+                  value={searchEngine}
+                  onChange={(e) => setSearchEngine(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <option value="baidu">百度</option>
+                  <option value="google">Google</option>
+                  <option value="sogou">搜狗</option>
+                </select>
+              )}
             </div>
           </>
         ) : (

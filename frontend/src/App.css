@@ -438,11 +438,6 @@ body {
   height: 120px;
   overflow-y: auto;
   resize: vertical;
-  cursor: pointer;
-}
-
-.event-detail-popup:hover {
-  border-color: var(--accent);
 }
 
 .popup-empty {
@@ -499,3 +494,12 @@ body {
 }
 
 /* (styles consolidated above) */
+
+.search-engine-select {
+  padding: 0.05rem 0.2rem;
+  background: var(--bg);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  font-size: 0.6rem;
+}
