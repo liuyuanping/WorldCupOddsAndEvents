@@ -63,8 +63,9 @@ export default function ChampionEvents() {
             useAppStore.getState().loadEvents();
           }}
         >
-          <option value="gdelt">🌐 GDELT (真实新闻)</option>
+          <option value="offline">📁 离线数据 (本地文件)</option>
           <option value="mock_team_events">🔬 Mock (模拟事件)</option>
+          <option value="gdelt">🌐 GDELT (真实新闻)</option>
         </select>
       </div>
 
