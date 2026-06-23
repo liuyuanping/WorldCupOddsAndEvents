@@ -152,6 +152,7 @@ export default function ChampionTrend() {
     series: teamIds.map((tid) => {
       const data = normalized.series.get(tid) || [];
       const isHovered = !hoveredTeamId || hoveredTeamId === tid;
+      const color = getTeamColor(tid);
       return {
         type: "line" as const,
         name: `${oddsTrends[tid]?.flag_emoji || ""} ${oddsTrends[tid]?.team_name || tid}`,
@@ -159,9 +160,9 @@ export default function ChampionTrend() {
         smooth: true,
         symbol: "none" as const,
         connectNulls: true,
+        color,
         lineStyle: {
           width: isHovered ? 2 : 1,
-          color: getTeamColor(tid),
           opacity: isHovered ? 1 : 0.2,
         },
         markPoint: {
