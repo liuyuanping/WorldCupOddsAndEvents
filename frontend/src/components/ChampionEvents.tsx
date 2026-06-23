@@ -8,6 +8,8 @@ export default function ChampionEvents() {
   const selectedTeamIds = useAppStore((s) => s.selectedTeamIds);
   const hoveredTeamId = useAppStore((s) => s.hoveredTeamId);
   const setHoveredTeam = useAppStore((s) => s.setHoveredTeam);
+  const selectedEvent = useAppStore((s) => s.selectedEvent);
+  const setSelectedEvent = useAppStore((s) => s.setSelectedEvent);
   const selectedEventTypes = useAppStore((s) => s.selectedEventTypes);
   const toggleEventType = useAppStore((s) => s.toggleEventType);
 
@@ -59,16 +61,22 @@ export default function ChampionEvents() {
         {filteredEvents.slice(0, 40).map((evt, i) => {
           const isHovered = hoveredTeamId === evt.team_id;
           const isDimmed = hoveredTeamId && !isHovered;
+          const isSelected = selectedEvent?.title === evt.title && selectedEvent?.team_id === evt.team_id;
           return (
             <div
               key={i}
-              className={`event-item ${isHovered ? "highlighted" : ""}`}
+              className={`event-item ${isHovered ? "highlighted" : ""} ${isSelected ? "selected" : ""}`}
               style={{
                 borderLeft: `3px solid ${getTeamColor(evt.team_id)}`,
                 opacity: isDimmed ? 0.35 : 1,
+                outline: isSelected ? `1px solid ${getTeamColor(evt.team_id)}` : "none",
               }}
               onMouseEnter={() => setHoveredTeam(evt.team_id)}
               onMouseLeave={() => setHoveredTeam(null)}
+              onClick={() => {
+                setSelectedEvent(evt);
+                setHoveredTeam(evt.team_id);
+              }}
             >
               <div className="event-item-header">
                 <span className="event-team">
