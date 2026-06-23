@@ -290,7 +290,7 @@ export default function ChampionTrend() {
       </div>
       <ReactECharts
         option={option}
-        style={{ height: 360, width: "100%" }}
+        style={{ height: 720, width: "100%" }}
         notMerge={true}
         onEvents={{
           click: (params: any) => {
