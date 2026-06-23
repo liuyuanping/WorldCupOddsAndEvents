@@ -12,6 +12,8 @@ export default function ChampionEvents() {
   const setSelectedEvent = useAppStore((s) => s.setSelectedEvent);
   const selectedEventTypes = useAppStore((s) => s.selectedEventTypes);
   const toggleEventType = useAppStore((s) => s.toggleEventType);
+  const eventDataProvider = useAppStore((s) => s.eventDataProvider);
+  const setEventDataProvider = useAppStore((s) => s.setEventDataProvider);
 
   // Filter events for selected teams only
   const filteredEvents = useMemo(() => {
@@ -51,7 +53,20 @@ export default function ChampionEvents() {
 
   return (
     <div className="panel events-panel">
-      <h3>📰 球队事件</h3>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+        <h3 style={{ margin: 0 }}>📰 球队事件</h3>
+        <select
+          className="bm-select"
+          value={eventDataProvider}
+          onChange={(e) => {
+            setEventDataProvider(e.target.value);
+            useAppStore.getState().loadEvents();
+          }}
+        >
+          <option value="gdelt">🌐 GDELT (真实新闻)</option>
+          <option value="mock_team_events">🔬 Mock (模拟事件)</option>
+        </select>
+      </div>
 
       {/* Fixed height detail area — always visible */}
       <div className="event-detail-popup">

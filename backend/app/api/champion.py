@@ -106,9 +106,12 @@ async def get_team_events(
     team_id: str | None = Query(default=None),
     event_type: str | None = Query(default=None),
     limit: int = Query(default=100, le=500),
+    provider: str = Query(default="mock_team_events"),
 ):
     """Get team-level events."""
-    adapter = registry.get_event_instance("mock_team_events")
+    adapter = registry.get_event_instance(provider)
+    if not adapter:
+        adapter = registry.get_event_instance("mock_team_events")
     if not adapter:
         raise HTTPException(status_code=503, detail="Team event data source not available")
 

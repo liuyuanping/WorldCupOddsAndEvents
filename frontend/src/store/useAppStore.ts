@@ -43,6 +43,7 @@ interface AppState {
   loadTeams: () => Promise<void>;
   loadTrends: (teamIds: string[]) => Promise<void>;
   loadEvents: () => Promise<void>;
+  setEventDataProvider: (p: string) => void;
   loadPrediction: () => Promise<void>;
   toggleTeam: (tid: string) => void;
   selectTeams: (tids: string[]) => void;
@@ -52,6 +53,7 @@ interface AppState {
   setDataProvider: (p: string) => void;
   setSelectedBookmaker: (bm: string) => void;
   setTrendInterval: (interval: string) => void;
+  setEventDataProvider: (p: string) => void;
   setHoveredTeam: (tid: string | null) => void;
   setSelectedEvent: (evt: TeamEventData | null) => void;
   toggleEventType: (t: string) => void;
@@ -115,8 +117,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadEvents: async () => {
     set({ eventsLoading: true });
     try {
-      const provider = get().dataProvider;
-      const data = await fetchChampionEvents({ limit: 200, provider });
+      const ep = get().eventDataProvider;
+      const data = await fetchChampionEvents({ limit: 200, provider: ep });
       set({ events: data.events, eventsLoading: false });
     } catch (e) {
       console.error("loadEvents failed:", e);
@@ -193,6 +195,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setTrendInterval: (interval: string) => {
     set({ trendInterval: interval });
     get().loadTrends([...get().selectedTeamIds]);
+  },
+
+  setEventDataProvider: (p: string) => {
+    set({ eventDataProvider: p });
+    get().loadEvents();
   },
 
   setHoveredTeam: (tid: string | null) => set({ hoveredTeamId: tid }),

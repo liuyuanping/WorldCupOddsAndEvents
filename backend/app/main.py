@@ -16,6 +16,7 @@ from app.adapters.odds.mock_champion_odds_adapter import MockChampionOddsAdapter
 from app.adapters.odds.polymarket_champion_adapter import PolymarketChampionAdapter
 from app.adapters.events.mock_event_adapter import MockEventAdapter
 from app.adapters.events.mock_team_event_adapter import MockTeamEventAdapter
+from app.adapters.events.gdelt_adapter import GDELTTeamEventAdapter
 from app.api import odds, events, correlations, datasources, champion
 
 logging.basicConfig(level=logging.INFO)
@@ -35,11 +36,13 @@ async def lifespan(app: FastAPI):
     registry.register_odds(PolymarketChampionAdapter, "polymarket")
     registry.register_event(MockEventAdapter, "mock_events")
     registry.register_event(MockTeamEventAdapter, "mock_team_events")
+    registry.register_event(GDELTTeamEventAdapter, "gdelt")
     await registry.enable("mock_odds")
     await registry.enable("mock_champion_odds")
     await registry.enable("polymarket")
     await registry.enable("mock_events")
     await registry.enable("mock_team_events")
+    await registry.enable("gdelt")
 
     logger.info("API ready. Providers: %s", registry.get_all_providers())
 
