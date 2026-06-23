@@ -145,6 +145,9 @@ export default function ChampionTrend() {
   const option = {
     tooltip: {
       trigger: "axis" as const,
+      enterable: true,
+      hideDelay: 300,
+      transitionDuration: 0.2,
       formatter: (params: any) => {
         if (!Array.isArray(params) || params.length === 0) return "";
         const ts = params[0]?.value[0];
@@ -236,6 +239,9 @@ export default function ChampionTrend() {
           z: 10,
           tooltip: {
             trigger: "item" as const,
+            enterable: true,
+            hideDelay: 500,
+            transitionDuration: 0.3,
             formatter: (p: any) => {
               const d = p.data;
               const sevLabels = ["", "低", "中", "高", "严重"];
