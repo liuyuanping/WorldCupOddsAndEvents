@@ -143,40 +143,43 @@ async def get_team_events(
 @router.get("/predict", response_model=ChampionPredictionResponse)
 async def predict_champion(
     n_simulations: int = Query(default=10000, ge=1000, le=100000),
+    provider: str = Query(default="polymarket"),
 ):
     """
     Monte Carlo simulation for World Cup champion prediction.
 
     Process:
-    1. Get current market odds for all 32 teams
+    1. Get current market odds for all teams from selected provider
     2. Convert odds to implied probabilities
     3. Add team strength factors (ELO, form, events)
     4. Run N simulations of the tournament
     5. Return champion probability rankings
     """
-    adapter = registry.get_odds_instance("mock_champion_odds")
+    adapter = registry.get_odds_instance(provider)
+    if not adapter or not hasattr(adapter, 'get_teams'):
+        adapter = registry.get_odds_instance("mock_champion_odds")
     if not adapter or not hasattr(adapter, 'get_teams'):
         raise HTTPException(status_code=503, detail="Champion odds not available")
 
     teams = adapter.get_teams()
+    if inspect.iscoroutine(teams):
+        teams = await teams
     if not teams:
         raise HTTPException(status_code=503, detail="No team data available")
 
     # Build team profiles
     profiles = []
     for t in teams:
-        # Market implied probability (with margin correction)
-        raw_prob = t["implied_probability"]
-        # Simple margin correction: redistribute excess
+        raw_prob = t.get("implied_probability", 0)
         profiles.append({
-            "team_id": t["team_id"],
-            "team_name": t["team_name"],
-            "flag_emoji": t["flag_emoji"],
-            "elo": t["elo_rating"],
+            "team_id": t.get("team_id", ""),
+            "team_name": t.get("team_name", ""),
+            "flag_emoji": t.get("flag_emoji", ""),
+            "elo": t.get("elo_rating", 2000),
             "market_prob": raw_prob,
-            "avg_odds": t["avg_odds"],
-            "trend_30d": t["odds_trend_30d"],
-            "group": t["group"],
+            "avg_odds": t.get("avg_odds", 999),
+            "trend_30d": t.get("odds_trend_30d", 0),
+            "group": t.get("group", "TBD"),
         })
 
     # Normalize market probabilities to sum to 1
