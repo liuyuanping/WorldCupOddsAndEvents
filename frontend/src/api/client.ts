@@ -8,7 +8,7 @@ import type {
 } from "../types";
 
 const api = axios.create({
-  baseURL: "http://localhost:8000",
+  baseURL: "",  // Relative URLs — goes through Vite proxy in dev
   timeout: 30000,
 });
 
