@@ -57,6 +57,21 @@ body {
   color: var(--text-muted);
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.provider-select {
+  padding: 0.25rem 0.5rem;
+  background: var(--bg-elevated);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
 /* ── Top Picks ──────────────────────── */
 
 .top-picks {

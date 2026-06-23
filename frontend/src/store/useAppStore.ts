@@ -34,8 +34,9 @@ interface AppState {
   prediction: ChampionPrediction | null;
   predictionLoading: boolean;
 
-  /* Bookmaker */
+  /* Bookmaker / Provider */
   selectedBookmaker: string;
+  dataProvider: string;
 
   /* Actions */
   loadTeams: () => Promise<void>;
@@ -43,6 +44,7 @@ interface AppState {
   loadEvents: () => Promise<void>;
   loadPrediction: () => Promise<void>;
   toggleTeam: (tid: string) => void;
+  setDataProvider: (p: string) => void;
   setSelectedBookmaker: (bm: string) => void;
   setHoveredTeam: (tid: string | null) => void;
   setSelectedEvent: (evt: TeamEventData | null) => void;
@@ -69,11 +71,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   predictionLoading: false,
 
   selectedBookmaker: "Pinnacle",
+  dataProvider: "polymarket",
 
   loadTeams: async () => {
     set({ teamsLoading: true });
     try {
-      const data = await fetchChampionTeams();
+      const provider = get().dataProvider;
+      const data = await fetchChampionTeams(provider);
       set({ teams: data.teams, teamsLoading: false });
     } catch (e) {
       console.error("loadTeams failed:", e);
@@ -84,10 +88,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadTrends: async (teamIds: string[]) => {
     set({ trendsLoading: true });
     try {
+      const provider = get().dataProvider;
       const bm = get().selectedBookmaker;
       const data = await fetchChampionTrend({
         team_ids: teamIds.join(","),
         bookmaker: bm,
+        provider: provider,
       });
       set({ oddsTrends: data.series as Record<string, OddsTrendSeries>, trendsLoading: false });
     } catch (e) {
@@ -99,7 +105,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadEvents: async () => {
     set({ eventsLoading: true });
     try {
-      const data = await fetchChampionEvents({ limit: 200 });
+      const provider = get().dataProvider;
+      const data = await fetchChampionEvents({ limit: 200, provider });
       set({ events: data.events, eventsLoading: false });
     } catch (e) {
       console.error("loadEvents failed:", e);
@@ -110,12 +117,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadPrediction: async () => {
     set({ predictionLoading: true });
     try {
-      const data = await fetchChampionPrediction({ n_simulations: 10000 });
+      const provider = get().dataProvider;
+      const data = await fetchChampionPrediction({ n_simulations: 10000, provider });
       set({ prediction: data, predictionLoading: false });
     } catch (e) {
       console.error("loadPrediction failed:", e);
       set({ predictionLoading: false });
     }
+  },
+
+  setDataProvider: (p: string) => {
+    set({ dataProvider: p, selectedTeamIds: new Set(DEFAULT_TEAMS) });
+    const state = get();
+    state.loadTeams();
+    state.loadEvents();
+    state.loadPrediction();
   },
 
   toggleTeam: (tid: string) => {

@@ -85,14 +85,15 @@ export async function checkHealth(): Promise<Record<string, unknown>> {
 
 /* ── Champion ───────────────────────────────────────── */
 
-export async function fetchChampionTeams(): Promise<{ teams: any[]; total: number }> {
-  const { data } = await api.get("/api/v1/champion/teams");
+export async function fetchChampionTeams(provider?: string): Promise<{ teams: any[]; total: number }> {
+  const { data } = await api.get("/api/v1/champion/teams", { params: provider ? { provider } : {} });
   return data;
 }
 
 export async function fetchChampionOdds(params: {
   team_ids?: string;
   bookmaker?: string;
+  provider?: string;
 }): Promise<{ odds: Record<string, any>; teams_count: number }> {
   const { data } = await api.get("/api/v1/champion/odds", { params });
   return data;
@@ -101,6 +102,7 @@ export async function fetchChampionOdds(params: {
 export async function fetchChampionTrend(params: {
   team_ids?: string;
   bookmaker?: string;
+  provider?: string;
 }): Promise<{ series: Record<string, any> }> {
   const { data } = await api.get("/api/v1/champion/trend", { params });
   return data;
@@ -109,6 +111,7 @@ export async function fetchChampionTrend(params: {
 export async function fetchChampionEvents(params: {
   team_id?: string;
   limit?: number;
+  provider?: string;
 }): Promise<{ events: any[]; total: number }> {
   const { data } = await api.get("/api/v1/champion/events", { params });
   return data;
@@ -116,6 +119,7 @@ export async function fetchChampionEvents(params: {
 
 export async function fetchChampionPrediction(params: {
   n_simulations?: number;
+  provider?: string;
 }): Promise<any> {
   const { data } = await api.get("/api/v1/champion/predict", { params });
   return data;

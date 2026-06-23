@@ -13,6 +13,7 @@ from app.database import init_db
 from app.adapters.registry import registry
 from app.adapters.odds.mock_odds_adapter import MockOddsAdapter
 from app.adapters.odds.mock_champion_odds_adapter import MockChampionOddsAdapter
+from app.adapters.odds.polymarket_champion_adapter import PolymarketChampionAdapter
 from app.adapters.events.mock_event_adapter import MockEventAdapter
 from app.adapters.events.mock_team_event_adapter import MockTeamEventAdapter
 from app.api import odds, events, correlations, datasources, champion
@@ -28,13 +29,15 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Odds-Event Correlation API...")
     await init_db()
 
-    # Register and enable mock adapters
+    # Register and enable adapters
     registry.register_odds(MockOddsAdapter, "mock_odds")
     registry.register_odds(MockChampionOddsAdapter, "mock_champion_odds")
+    registry.register_odds(PolymarketChampionAdapter, "polymarket")
     registry.register_event(MockEventAdapter, "mock_events")
     registry.register_event(MockTeamEventAdapter, "mock_team_events")
     await registry.enable("mock_odds")
     await registry.enable("mock_champion_odds")
+    await registry.enable("polymarket")
     await registry.enable("mock_events")
     await registry.enable("mock_team_events")
 

@@ -1,4 +1,5 @@
 """Championship prediction API routes."""
+import inspect
 import math
 import random
 from collections import defaultdict
@@ -20,15 +21,21 @@ router = APIRouter(prefix="/api/v1/champion", tags=["champion"])
 # ── Team Profiles ─────────────────────────────────────
 
 @router.get("/teams")
-async def list_teams():
-    """List all 32 teams with current odds and form."""
-    adapter = registry.get_odds_instance("mock_champion_odds")
+async def list_teams(
+    provider: str = Query(default="polymarket", description="Data source: polymarket or mock_champion_odds"),
+):
+    """List all teams with current odds and form."""
+    adapter = registry.get_odds_instance(provider)
+    if not adapter:
+        adapter = registry.get_odds_instance("mock_champion_odds")
     if not adapter or not hasattr(adapter, 'get_teams'):
         raise HTTPException(status_code=503, detail="Champion odds data source not available")
 
     teams = adapter.get_teams()
-    teams.sort(key=lambda t: t["avg_odds"])
-    return {"teams": teams, "total": len(teams)}
+    if inspect.iscoroutine(teams):
+        teams = await teams
+    teams.sort(key=lambda t: t.get("implied_probability", t.get("avg_odds", 999)), reverse=True)
+    return {"teams": teams, "total": len(teams), "provider": provider}
 
 
 # ── Champion Odds ─────────────────────────────────────
@@ -271,6 +278,31 @@ async def predict_champion(
         value_pick=value_pick,
         dark_horse=dark_horse,
     )
+
+
+# ── Price History (Polymarket) ────────────────────────
+
+@router.get("/price-history/{team_id}")
+async def get_price_history(
+    team_id: str,
+    provider: str = Query(default="polymarket"),
+    interval: str = Query(default="1w"),
+    fidelity: int = Query(default=30),
+):
+    """Get price history for a team from Polymarket CLOB."""
+    adapter = registry.get_odds_instance(provider)
+    if not adapter or not hasattr(adapter, 'get_price_history'):
+        raise HTTPException(status_code=503, detail="Price history not available for this provider")
+
+    history = await adapter.get_price_history(team_id, interval=interval, fidelity=fidelity)
+    info = adapter._fetch_live_prices.__doc__  # just get team info
+    team_info = {"team_id": team_id}
+
+    return {
+        "team_id": team_id,
+        "interval": interval,
+        "history": history,
+    }
 
 
 # ── Odds Trend (for charting) ─────────────────────────

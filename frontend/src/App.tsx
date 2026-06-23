@@ -12,18 +12,20 @@ export default function App() {
   const loadEvents = useAppStore((s) => s.loadEvents);
   const loadPrediction = useAppStore((s) => s.loadPrediction);
   const selectedTeamIds = useAppStore((s) => s.selectedTeamIds);
+  const dataProvider = useAppStore((s) => s.dataProvider);
+  const setDataProvider = useAppStore((s) => s.setDataProvider);
 
   useEffect(() => {
     loadTeams();
     loadEvents();
     loadPrediction();
-  }, []);
+  }, [dataProvider]);
 
   useEffect(() => {
     if (selectedTeamIds.size > 0) {
       loadTrends([...selectedTeamIds]);
     }
-  }, [selectedTeamIds.size]);
+  }, [selectedTeamIds.size, dataProvider]);
 
   return (
     <div className="app">
@@ -31,9 +33,19 @@ export default function App() {
       <header className="app-header">
         <div className="header-left">
           <h1>🏆 2026世界杯冠军预测</h1>
-          <span className="subtitle">32支球队 · 赔率趋势追踪 · 蒙特卡洛模拟</span>
+          <span className="subtitle">真实赔率 · 趋势追踪 · 蒙特卡洛模拟</span>
         </div>
-        <TopPicks />
+        <div className="header-right">
+          <select
+            className="provider-select"
+            value={dataProvider}
+            onChange={(e) => setDataProvider(e.target.value)}
+          >
+            <option value="polymarket">📊 Polymarket (真实数据)</option>
+            <option value="mock_champion_odds">🔬 Mock (模拟数据)</option>
+          </select>
+          <TopPicks />
+        </div>
       </header>
 
       {/* Main Dashboard */}
