@@ -46,35 +46,46 @@ async def _seed_database_events():
     from app.models.champion import TeamEventIn, TeamEventSeverity
     from datetime import timezone
 
-    seeds = [
-        TeamEventIn(provider="database", source_id="", team_id="france", team_name="法国",
-                    event_type="injury", title="姆巴佩训练中脚踝受伤",
-                    description="法国队核心姆巴佩在训练中脚踝扭伤，队医评估需休养2-3周",
-                    timestamp=datetime(2026, 6, 20, 10, 30, tzinfo=timezone.utc),
-                    severity=TeamEventSeverity.CRITICAL, confidence=0.90),
-        TeamEventIn(provider="database", source_id="", team_id="argentina", team_name="阿根廷",
-                    event_type="squad", title="阿根廷公布26人最终名单",
-                    description="梅西领衔，迪马利亚、阿尔瓦雷斯入选",
-                    timestamp=datetime(2026, 6, 22, 14, 0, tzinfo=timezone.utc),
-                    severity=TeamEventSeverity.MEDIUM, confidence=1.0),
-        TeamEventIn(provider="database", source_id="", team_id="brazil", team_name="巴西",
-                    event_type="form", title="巴西热身赛4-0大胜",
-                    description="巴西队在最后一场热身赛中4-0击败对手，维尼修斯梅开二度",
-                    timestamp=datetime(2026, 6, 18, 20, 0, tzinfo=timezone.utc),
-                    severity=TeamEventSeverity.MEDIUM, confidence=0.95),
-        TeamEventIn(provider="database", source_id="", team_id="germany", team_name="德国",
-                    event_type="injury", title="德国队主力门将训练中受伤",
-                    description="诺伊尔在训练中肩部不适，已接受检查",
-                    timestamp=datetime(2026, 6, 21, 9, 0, tzinfo=timezone.utc),
-                    severity=TeamEventSeverity.HIGH, confidence=0.80),
-        TeamEventIn(provider="database", source_id="", team_id="spain", team_name="西班牙",
-                    event_type="form", title="西班牙热身赛三连胜",
-                    description="西班牙队近期三场热身赛全胜，打进10球仅失1球",
-                    timestamp=datetime(2026, 6, 19, 22, 0, tzinfo=timezone.utc),
-                    severity=TeamEventSeverity.MEDIUM, confidence=0.95),
+    matches = [
+        # Round 1
+        ("brazil","巴西","serbia","塞尔维亚","2-0","A","2026-06-11T20:00:00Z"),
+        ("france","法国","peru","秘鲁","3-1","B","2026-06-12T17:00:00Z"),
+        ("argentina","阿根廷","egypt","埃及","2-0","C","2026-06-12T20:00:00Z"),
+        ("england","英格兰","iran","伊朗","4-0","D","2026-06-13T17:00:00Z"),
+        ("spain","西班牙","japan","日本","2-1","E","2026-06-13T20:00:00Z"),
+        ("germany","德国","canada","加拿大","1-1","F","2026-06-14T17:00:00Z"),
+        ("portugal","葡萄牙","ghana","加纳","3-0","G","2026-06-14T20:00:00Z"),
+        ("netherlands","荷兰","south_korea","韩国","2-0","H","2026-06-15T17:00:00Z"),
+        # Round 2
+        ("brazil","巴西","switzerland","瑞士","2-1","A","2026-06-16T20:00:00Z"),
+        ("france","法国","denmark","丹麦","1-0","B","2026-06-17T17:00:00Z"),
+        ("argentina","阿根廷","poland","波兰","3-2","C","2026-06-17T20:00:00Z"),
+        ("england","英格兰","usa","美国","1-0","D","2026-06-18T17:00:00Z"),
+        ("spain","西班牙","croatia","克罗地亚","0-0","E","2026-06-18T20:00:00Z"),
+        ("germany","德国","morocco","摩洛哥","3-1","F","2026-06-19T17:00:00Z"),
+        ("portugal","葡萄牙","uruguay","乌拉圭","1-1","G","2026-06-19T20:00:00Z"),
+        ("netherlands","荷兰","senegal","塞内加尔","2-1","H","2026-06-20T17:00:00Z"),
+        # Round 3
+        ("brazil","巴西","mexico","墨西哥","3-0","A","2026-06-22T20:00:00Z"),
+        ("france","法国","norway","挪威","2-0","B","2026-06-23T17:00:00Z"),
+        ("argentina","阿根廷","colombia","哥伦比亚","1-0","C","2026-06-23T20:00:00Z"),
+        ("england","英格兰","scotland","苏格兰","2-1","D","2026-06-24T17:00:00Z"),
+        ("spain","西班牙","morocco","摩洛哥","1-0","E","2026-06-24T20:00:00Z"),
     ]
-    for event in seeds:
-        await adapter.add_event(event)
+    for hid, hn, aid, an, score, grp, ts in matches:
+        hs, aws = score.split("-")
+        await adapter.add_event(TeamEventIn(provider="database", source_id="",
+            team_id=hid, team_name=hn, event_type="match_result",
+            title=f"{hn} {score} {an}",
+            description=f"2026世界杯{grp}组 · {hn} {score} {an}",
+            timestamp=datetime.fromisoformat(ts), severity=TeamEventSeverity.MEDIUM, confidence=1.0))
+        await adapter.add_event(TeamEventIn(provider="database", source_id="",
+            team_id=aid, team_name=an, event_type="match_result",
+            title=f"{an} {aws}-{hs} {hn}",
+            description=f"2026世界杯{grp}组 · {hn} {score} {an}",
+            timestamp=datetime.fromisoformat(ts), severity=TeamEventSeverity.MEDIUM, confidence=1.0))
+
+    logger.info(f"Seeded {len(matches)*2} match events + 5 news events")
     logger.info(f"Seeded {len(seeds)} database events")
 
 
