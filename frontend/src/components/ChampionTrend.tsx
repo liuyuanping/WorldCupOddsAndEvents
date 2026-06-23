@@ -113,6 +113,7 @@ export default function ChampionTrend() {
   const setSelectedBookmaker = useAppStore((s) => s.setSelectedBookmaker);
   const trendInterval = useAppStore((s) => s.trendInterval);
   const setTrendInterval = useAppStore((s) => s.setTrendInterval);
+  const dataProvider = useAppStore((s) => s.dataProvider);
   const hoveredTeamId = useAppStore((s) => s.hoveredTeamId);
   const selectedEventTypes = useAppStore((s) => s.selectedEventTypes);
 
@@ -231,16 +232,18 @@ export default function ChampionTrend() {
               </button>
             ))}
           </div>
-          <select
-            value={selectedBookmaker}
-            onChange={(e) => setSelectedBookmaker(e.target.value)}
-            className="bm-select"
-          >
-            <option value="Pinnacle">Pinnacle</option>
-            <option value="Bet365">Bet365</option>
-            <option value="William Hill">William Hill</option>
-            <option value="Betfair">Betfair</option>
-          </select>
+          {dataProvider !== "polymarket" && (
+            <select
+              value={selectedBookmaker}
+              onChange={(e) => setSelectedBookmaker(e.target.value)}
+              className="bm-select"
+            >
+              <option value="Pinnacle">Pinnacle</option>
+              <option value="Bet365">Bet365</option>
+              <option value="William Hill">William Hill</option>
+              <option value="Betfair">Betfair</option>
+            </select>
+          )}
         </div>
       </div>
       <ReactECharts option={option} style={{ height: 360, width: "100%" }} notMerge={true} />
