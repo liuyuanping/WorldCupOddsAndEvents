@@ -4,6 +4,15 @@ import ReactECharts from "echarts-for-react";
 import { useAppStore } from "../store/useAppStore";
 import { getTeamColor, SEVERITY_COLORS } from "../types";
 
+const TIME_INTERVALS = [
+  { label: "1h", value: "1h" },
+  { label: "6h", value: "6h" },
+  { label: "1d", value: "1d" },
+  { label: "1w", value: "1w" },
+  { label: "1m", value: "1m" },
+  { label: "All", value: "all" },
+];
+
 /** Format timestamp to full datetime */
 function fmtTime(ts: number): string {
   const d = new Date(ts);
@@ -89,6 +98,8 @@ export default function ChampionTrend() {
   const trendsLoading = useAppStore((s) => s.trendsLoading);
   const selectedBookmaker = useAppStore((s) => s.selectedBookmaker);
   const setSelectedBookmaker = useAppStore((s) => s.setSelectedBookmaker);
+  const trendInterval = useAppStore((s) => s.trendInterval);
+  const setTrendInterval = useAppStore((s) => s.setTrendInterval);
   const hoveredTeamId = useAppStore((s) => s.hoveredTeamId);
   const selectedEventTypes = useAppStore((s) => s.selectedEventTypes);
 
@@ -136,7 +147,11 @@ export default function ChampionTrend() {
       }),
       textStyle: { color: "#e2e8f0", fontSize: 11 },
     },
-    grid: { top: 50, right: 30, bottom: 30, left: 60 },
+    grid: { top: 50, right: 30, bottom: 60, left: 60 },
+    dataZoom: [
+      { type: "inside", start: 0, end: 100 },
+      { type: "slider", start: 0, end: 100, height: 25, bottom: 10 },
+    ],
     xAxis: {
       type: "time" as const,
       axisLabel: {
@@ -191,16 +206,29 @@ export default function ChampionTrend() {
     <div className="panel trend-panel">
       <div className="trend-header">
         <h3>📈 胜率趋势</h3>
-        <select
-          value={selectedBookmaker}
-          onChange={(e) => setSelectedBookmaker(e.target.value)}
-          className="bm-select"
-        >
-          <option value="Pinnacle">Pinnacle</option>
-          <option value="Bet365">Bet365</option>
-          <option value="William Hill">William Hill</option>
-          <option value="Betfair">Betfair</option>
-        </select>
+        <div className="trend-controls">
+          <div className="interval-btns">
+            {TIME_INTERVALS.map((ti) => (
+              <button
+                key={ti.value}
+                className={`chip ${trendInterval === ti.value ? "active" : ""}`}
+                onClick={() => setTrendInterval(ti.value)}
+              >
+                {ti.label}
+              </button>
+            ))}
+          </div>
+          <select
+            value={selectedBookmaker}
+            onChange={(e) => setSelectedBookmaker(e.target.value)}
+            className="bm-select"
+          >
+            <option value="Pinnacle">Pinnacle</option>
+            <option value="Bet365">Bet365</option>
+            <option value="William Hill">William Hill</option>
+            <option value="Betfair">Betfair</option>
+          </select>
+        </div>
       </div>
       <ReactECharts option={option} style={{ height: 360, width: "100%" }} notMerge={true} />
       <div className="trend-legend">

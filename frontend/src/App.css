@@ -407,3 +407,21 @@ body {
   flex-direction: column;
   overflow-y: auto;
 }
+
+/* ── Trend Controls ─────────────────── */
+
+.trend-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.interval-btns {
+  display: flex;
+  gap: 0.15rem;
+}
+
+.interval-btns .chip {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.5rem;
+}

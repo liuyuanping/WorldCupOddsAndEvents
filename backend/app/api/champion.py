@@ -318,6 +318,7 @@ async def get_odds_trend(
     team_ids: str = Query(default="brazil,france,england,argentina"),
     bookmaker: str = Query(default="Pinnacle"),
     provider: str = Query(default="polymarket"),
+    interval: str = Query(default="1w", description="1h, 6h, 1d, 1w, 1m, all"),
 ):
     """Get odds trend data for selected teams (for line chart)."""
     tid_list = team_ids.split(",")
@@ -329,7 +330,7 @@ async def get_odds_trend(
         if adapter and hasattr(adapter, 'get_price_history'):
             for tid in tid_list:
                 try:
-                    history = await adapter.get_price_history(tid, interval="1w", fidelity=30)
+                    history = await adapter.get_price_history(tid, interval=interval, fidelity=30)
                     if not history:
                         continue
                     info = adapter.POLYMARKET_TEAMS.get(tid, {}) if hasattr(adapter, 'POLYMARKET_TEAMS') else {}

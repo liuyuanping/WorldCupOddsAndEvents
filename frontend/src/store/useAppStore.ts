@@ -36,6 +36,7 @@ interface AppState {
 
   /* Bookmaker / Provider */
   selectedBookmaker: string;
+  trendInterval: string;
   dataProvider: string;
 
   /* Actions */
@@ -50,6 +51,7 @@ interface AppState {
   deselectAll: () => void;
   setDataProvider: (p: string) => void;
   setSelectedBookmaker: (bm: string) => void;
+  setTrendInterval: (interval: string) => void;
   setHoveredTeam: (tid: string | null) => void;
   setSelectedEvent: (evt: TeamEventData | null) => void;
   toggleEventType: (t: string) => void;
@@ -77,6 +79,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   predictionLoading: false,
 
   selectedBookmaker: "Pinnacle",
+  trendInterval: "1w",
   dataProvider: "polymarket",
 
   loadTeams: async () => {
@@ -100,6 +103,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         team_ids: teamIds.join(","),
         bookmaker: bm,
         provider: provider,
+        interval: get().trendInterval,
       });
       set({ oddsTrends: data.series as Record<string, OddsTrendSeries>, trendsLoading: false });
     } catch (e) {
@@ -183,6 +187,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setSelectedBookmaker: (bm: string) => {
     set({ selectedBookmaker: bm });
+    get().loadTrends([...get().selectedTeamIds]);
+  },
+
+  setTrendInterval: (interval: string) => {
+    set({ trendInterval: interval });
     get().loadTrends([...get().selectedTeamIds]);
   },
 

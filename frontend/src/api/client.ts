@@ -103,6 +103,7 @@ export async function fetchChampionTrend(params: {
   team_ids?: string;
   bookmaker?: string;
   provider?: string;
+  interval?: string;
 }): Promise<{ series: Record<string, any> }> {
   const { data } = await api.get("/api/v1/champion/trend", { params });
   return data;
