@@ -1,5 +1,6 @@
 """Championship prediction API routes."""
 import inspect
+import logging
 import math
 import random
 from collections import defaultdict
@@ -8,6 +9,8 @@ from typing import Dict, Tuple
 
 from fastapi import APIRouter, Query, HTTPException
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 from app.adapters.registry import registry
 from app.models.champion import (
@@ -311,26 +314,56 @@ async def get_price_history(
 async def get_odds_trend(
     team_ids: str = Query(default="brazil,france,england,argentina"),
     bookmaker: str = Query(default="Pinnacle"),
+    provider: str = Query(default="polymarket"),
 ):
     """Get odds trend data for selected teams (for line chart)."""
+    tid_list = team_ids.split(",")
+    result = {}
+
+    if provider == "polymarket":
+        # Use Polymarket CLOB price history
+        adapter = registry.get_odds_instance("polymarket")
+        if adapter and hasattr(adapter, 'get_price_history'):
+            for tid in tid_list:
+                try:
+                    history = await adapter.get_price_history(tid, interval="1w", fidelity=30)
+                    if not history:
+                        continue
+                    info = adapter.POLYMARKET_TEAMS.get(tid, {}) if hasattr(adapter, 'POLYMARKET_TEAMS') else {}
+                    result[tid] = {
+                        "team_name": info.get("name", tid),
+                        "flag_emoji": info.get("flag", ""),
+                        "data": [
+                            {"timestamp": h["timestamp"], "odds": round(1.0 / max(h["price"], 0.0001), 2),
+                             "prob": round(h["price"], 4)}
+                            for h in history
+                        ],
+                    }
+                except Exception as e:
+                    logger.warning(f"Failed to get price history for {tid}: {e}")
+                    continue
+
+        if result:
+            return {"series": result}
+
+    # Fallback to mock data
     adapter = registry.get_odds_instance("mock_champion_odds")
     if not adapter:
         raise HTTPException(status_code=503, detail="Not available")
 
-    tid_list = team_ids.split(",")
     records = await adapter.fetch_odds(bookmakers=[bookmaker])
 
-    result = {}
     for tid in tid_list:
         team_records = [r for r in records if r.team_id == tid]
         team_records.sort(key=lambda r: r.timestamp)
-        result[tid] = {
-            "team_name": team_records[0].team_name if team_records else tid,
-            "flag_emoji": team_records[0].metadata.get("flag", "") if team_records else "",
-            "data": [
-                {"timestamp": r.timestamp.isoformat(), "odds": r.odds_value, "prob": r.implied_probability}
-                for r in team_records
-            ],
-        }
+        if team_records:
+            result[tid] = {
+                "team_name": team_records[0].team_name,
+                "flag_emoji": team_records[0].metadata.get("flag", ""),
+                "data": [
+                    {"timestamp": r.timestamp.isoformat(), "odds": r.odds_value, "prob": r.implied_probability}
+                    for r in team_records
+                ],
+            }
 
     return {"series": result}
