@@ -1,4 +1,4 @@
-/* ── Odds Trend Line Chart ────────────────────────────── */
+/* ── Probability Trend Line Chart ──────────────────────── */
 import ReactECharts from "echarts-for-react";
 import { useAppStore } from "../store/useAppStore";
 import { getTeamColor, SEVERITY_COLORS } from "../types";
@@ -14,12 +14,12 @@ export default function ChampionTrend() {
   const selectedEventTypes = useAppStore((s) => s.selectedEventTypes);
 
   if (trendsLoading && Object.keys(oddsTrends).length === 0) {
-    return <div className="panel loading">加载赔率趋势中...</div>;
+    return <div className="panel loading">加载数据中...</div>;
   }
 
   const teamIds = Object.keys(oddsTrends);
   if (teamIds.length === 0) {
-    return <div className="panel loading">选择球队查看赔率趋势</div>;
+    return <div className="panel loading">选择球队查看胜率趋势</div>;
   }
 
   // Filter events for selected teams
@@ -35,7 +35,7 @@ export default function ChampionTrend() {
       formatter: (params: any) => {
         const lines = params.map(
           (p: any) =>
-            `<span style="color:${p.color}">●</span> ${p.seriesName}: <b>${p.value[1]?.toFixed(2)}</b>`
+            `<span style="color:${p.color}">●</span> ${p.seriesName}: <b>${p.value[1]?.toFixed(1)}%</b>`
         );
         const d = new Date(params[0]?.value[0]);
         return `<b>${d.toLocaleDateString("zh-CN")}</b><br/>${lines.join("<br/>")}`;
@@ -62,15 +62,15 @@ export default function ChampionTrend() {
     },
     yAxis: {
       type: "value" as const,
-      name: "夺冠赔率",
-      inverse: true,  // Lower odds = higher probability
-      axisLabel: { fontSize: 11 },
+      name: "夺冠概率 (%)",
+      axisLabel: { formatter: "{value}%", fontSize: 11 },
     },
-    series: teamIds.map((tid, i) => {
+    series: teamIds.map((tid) => {
       const series = oddsTrends[tid];
+      // Use probability (0-1) → percentage
       const data = (series?.data || []).map((d) => [
         new Date(d.timestamp).getTime(),
-        d.odds,
+        (d.prob ?? 0) * 100,
       ]);
       const isHovered = !hoveredTeamId || hoveredTeamId === tid;
       return {
@@ -84,7 +84,6 @@ export default function ChampionTrend() {
           color: getTeamColor(tid),
           opacity: isHovered ? 1 : 0.2,
         },
-        // Event markers on the curve
         markPoint: {
           silent: true,
           symbol: "triangle",
@@ -93,7 +92,6 @@ export default function ChampionTrend() {
             .filter((e) => e.team_id === tid)
             .map((e) => {
               const evtTs = new Date(e.timestamp).getTime();
-              // Find nearest data point
               const nearest = data.reduce((prev, curr) =>
                 Math.abs(curr[0] - evtTs) < Math.abs(prev[0] - evtTs) ? curr : prev
               );
@@ -113,7 +111,7 @@ export default function ChampionTrend() {
   return (
     <div className="panel trend-panel">
       <div className="trend-header">
-        <h3>📈 赔率趋势</h3>
+        <h3>📈 胜率趋势</h3>
         <select
           value={selectedBookmaker}
           onChange={(e) => setSelectedBookmaker(e.target.value)}
@@ -127,7 +125,7 @@ export default function ChampionTrend() {
       </div>
       <ReactECharts option={option} style={{ height: 360, width: "100%" }} />
       <div className="trend-legend">
-        {teamIds.map((tid, i) => (
+        {teamIds.map((tid) => (
           <span
             key={tid}
             className="legend-item"
