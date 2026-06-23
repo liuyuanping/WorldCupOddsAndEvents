@@ -43,7 +43,10 @@ export default function ChampionTrend() {
     },
     legend: {
       top: 5,
-      data: teamIds.map((tid) => oddsTrends[tid]?.team_name || tid),
+      data: teamIds.map((tid) => {
+        const s = oddsTrends[tid];
+        return s ? `${s.flag_emoji || ""} ${s.team_name || tid}` : tid;
+      }),
       textStyle: { color: "#e2e8f0", fontSize: 11 },
     },
     grid: { top: 50, right: 30, bottom: 30, left: 60 },
