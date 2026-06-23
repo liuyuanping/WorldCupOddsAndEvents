@@ -503,3 +503,25 @@ body {
   border-radius: 2px;
   font-size: 0.6rem;
 }
+
+.refresh-toggle {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.75rem;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.refresh-toggle:hover { background: var(--border); }
+.refresh-toggle.active {
+  background: #f97316;
+  color: white;
+  border-color: #f97316;
+  animation: pulse 1.5s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}

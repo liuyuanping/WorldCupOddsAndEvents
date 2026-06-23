@@ -13,6 +13,8 @@ export default function App() {
   const selectedTeamIds = useAppStore((s) => s.selectedTeamIds);
   const dataProvider = useAppStore((s) => s.dataProvider);
   const setDataProvider = useAppStore((s) => s.setDataProvider);
+  const onlineMode = useAppStore((s) => s.onlineMode);
+  const toggleOnlineMode = useAppStore((s) => s.toggleOnlineMode);
 
   useEffect(() => {
     loadTeams();
@@ -42,6 +44,13 @@ export default function App() {
             <option value="polymarket">📊 Polymarket (真实数据)</option>
             <option value="mock_champion_odds">🔬 Mock (模拟数据)</option>
           </select>
+          <button
+            className={`refresh-toggle ${onlineMode ? "active" : ""}`}
+            onClick={toggleOnlineMode}
+            title={onlineMode ? "在线模式：强制从数据源拉取并缓存" : "缓存模式：优先使用本地数据"}
+          >
+            {onlineMode ? "🔄 刷新中" : "💾 缓存"}
+          </button>
         </div>
       </header>
 

@@ -37,13 +37,13 @@ interface AppState {
   /* Bookmaker / Provider */
   selectedBookmaker: string;
   trendInterval: string;
+  onlineMode: boolean;
   dataProvider: string;
 
   /* Actions */
   loadTeams: () => Promise<void>;
   loadTrends: (teamIds: string[]) => Promise<void>;
   loadEvents: () => Promise<void>;
-  setEventDataProvider: (p: string) => void;
   loadPrediction: () => Promise<void>;
   toggleTeam: (tid: string) => void;
   selectTeams: (tids: string[]) => void;
@@ -54,6 +54,7 @@ interface AppState {
   setSelectedBookmaker: (bm: string) => void;
   setTrendInterval: (interval: string) => void;
   setEventDataProvider: (p: string) => void;
+  toggleOnlineMode: () => void;
   setHoveredTeam: (tid: string | null) => void;
   setSelectedEvent: (evt: TeamEventData | null) => void;
   toggleEventType: (t: string) => void;
@@ -82,6 +83,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   selectedBookmaker: "Pinnacle",
   trendInterval: "1w",
+  eventDataProvider: "mock_team_events",
+  onlineMode: false,
   dataProvider: "polymarket",
 
   loadTeams: async () => {
@@ -200,6 +203,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   setEventDataProvider: (p: string) => {
     set({ eventDataProvider: p });
     get().loadEvents();
+  },
+
+  toggleOnlineMode: () => {
+    const next = !get().onlineMode;
+    set({ onlineMode: next });
+    // Reload all data with the new mode
+    get().loadTeams();
+    get().loadEvents();
+    get().loadTrends([...get().selectedTeamIds]);
   },
 
   setHoveredTeam: (tid: string | null) => set({ hoveredTeamId: tid }),

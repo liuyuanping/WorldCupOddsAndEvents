@@ -8,6 +8,7 @@ import httpx
 
 from app.adapters.base import OddsProviderAdapter
 from app.models.champion import ChampionOddsIn
+from app.cache import cache
 
 logger = logging.getLogger(__name__)
 
@@ -160,8 +161,16 @@ class PolymarketChampionAdapter(OddsProviderAdapter):
     def get_supported_bookmakers(self) -> List[str]:
         return ["Polymarket"]
 
-    async def get_teams(self) -> List[Dict]:
-        """Get team list with Polymarket prices."""
+    async def get_teams(self, online: bool = False) -> List[Dict]:
+        """Get team list with Polymarket prices. Uses cache unless online=True."""
+        cache_key = "champion_teams"
+
+        # Online mode: always fetch fresh
+        if not online:
+            cached = await cache.get("polymarket", cache_key)
+            if cached:
+                return cached
+
         live_prices = {}
         try:
             live_prices = await self._fetch_live_prices()
@@ -188,6 +197,7 @@ class PolymarketChampionAdapter(OddsProviderAdapter):
             })
 
         teams.sort(key=lambda t: t["implied_probability"], reverse=True)
+        await cache.set("polymarket", cache_key, teams)
         return teams
 
     async def get_price_history(

@@ -17,7 +17,7 @@ from app.adapters.odds.polymarket_champion_adapter import PolymarketChampionAdap
 from app.adapters.events.mock_event_adapter import MockEventAdapter
 from app.adapters.events.mock_team_event_adapter import MockTeamEventAdapter
 from app.adapters.events.gdelt_adapter import GDELTTeamEventAdapter
-from app.api import odds, events, correlations, datasources, champion
+from app.api import odds, events, correlations, datasources, champion, cache as cache_api
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -75,6 +75,7 @@ app.include_router(events.router)
 app.include_router(correlations.router)
 app.include_router(datasources.router)
 app.include_router(champion.router)
+app.include_router(cache_api.router)
 
 
 # ── WebSocket for real-time odds ──────────────────────

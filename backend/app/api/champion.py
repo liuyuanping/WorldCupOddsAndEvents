@@ -26,6 +26,7 @@ router = APIRouter(prefix="/api/v1/champion", tags=["champion"])
 @router.get("/teams")
 async def list_teams(
     provider: str = Query(default="polymarket", description="Data source: polymarket or mock_champion_odds"),
+    online: bool = Query(default=False, description="Force fetch from external, bypass cache"),
 ):
     """List all teams with current odds and form."""
     adapter = registry.get_odds_instance(provider)
@@ -34,7 +35,7 @@ async def list_teams(
     if not adapter or not hasattr(adapter, 'get_teams'):
         raise HTTPException(status_code=503, detail="Champion odds data source not available")
 
-    teams = adapter.get_teams()
+    teams = adapter.get_teams(online=online)
     if inspect.iscoroutine(teams):
         teams = await teams
     teams.sort(key=lambda t: t.get("implied_probability", t.get("avg_odds", 999)), reverse=True)
