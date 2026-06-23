@@ -1,6 +1,7 @@
 /* ── Team Selector ───────────────────────────────────── */
 import { useState, useMemo } from "react";
 import { useAppStore } from "../store/useAppStore";
+import { getTeamColor } from "../types";
 
 export default function TeamSelector() {
   const teams = useAppStore((s) => s.teams);
@@ -64,6 +65,7 @@ export default function TeamSelector() {
             <div
               key={t.team_id}
               className={`team-chip ${isSel ? "active" : ""}`}
+              style={isSel ? { background: getTeamColor(t.team_id), borderColor: getTeamColor(t.team_id) } : {}}
               onClick={() => toggleTeam(t.team_id)}
               title={`${t.team_name}: ${prob}%`}
             >

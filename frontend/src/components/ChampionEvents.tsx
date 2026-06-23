@@ -1,7 +1,7 @@
 /* ── Event Feed ──────────────────────────────────────── */
 import { useMemo } from "react";
 import { useAppStore } from "../store/useAppStore";
-import { SEVERITY_COLORS, SEVERITY_LABELS } from "../types";
+import { SEVERITY_COLORS, SEVERITY_LABELS, getTeamColor } from "../types";
 
 export default function ChampionEvents() {
   const events = useAppStore((s) => s.events);
@@ -64,7 +64,7 @@ export default function ChampionEvents() {
               key={i}
               className={`event-item ${isHovered ? "highlighted" : ""}`}
               style={{
-                borderLeft: `3px solid ${SEVERITY_COLORS[evt.severity] || "#94a3b8"}`,
+                borderLeft: `3px solid ${getTeamColor(evt.team_id)}`,
                 opacity: isDimmed ? 0.35 : 1,
               }}
               onMouseEnter={() => setHoveredTeam(evt.team_id)}

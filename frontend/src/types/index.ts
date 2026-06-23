@@ -104,6 +104,63 @@ export const CURVE_COLORS = [
   "#8b5cf6", "#06b6d4", "#ec4899", "#84cc16",
 ];
 
+// Fixed per-team color map — same color across all modules
+export const TEAM_COLORS: Record<string, string> = {
+  // Tier 1: favorites
+  "france":       "#3b82f6",  // blue
+  "argentina":    "#56b8e5",  // light blue (argentina flag)
+  "spain":        "#ef4444",  // red
+  "england":      "#f59e0b",  // amber
+  // Tier 2: contenders
+  "portugal":     "#22c55e",  // green
+  "germany":      "#8b5cf6",  // violet
+  "netherlands":  "#f97316",  // orange
+  "brazil":       "#06b6d4",  // cyan
+  // Tier 3
+  "usa":          "#ec4899",  // pink
+  "norway":       "#84cc16",  // lime
+  "japan":        "#e11d48",  // rose
+  "morocco":      "#14b8a6",  // teal
+  "colombia":     "#d946ef",  // fuchsia
+  "mexico":       "#0ea5e9",  // sky
+  "belgium":      "#a855f7",  // purple
+  "switzerland":  "#64748b",  // slate
+  // Tier 4
+  "croatia":      "#f43f5e",
+  "canada":       "#10b981",
+  "ivory_coast":  "#6366f1",
+  "south_korea":  "#f97316",
+  "senegal":      "#2dd4bf",
+  "australia":    "#fbbf24",
+  "austria":      "#ef4444",
+  "egypt":        "#3b82f6",
+  "sweden":       "#06b6d4",
+  // Long shots
+  "ghana":        "#84cc16",
+  "uruguay":      "#8b5cf6",
+  "paraguay":     "#ec4899",
+  "scotland":     "#22c55e",
+  "ecuador":      "#f59e0b",
+  "congo_dr":     "#a855f7",
+  "new_zealand":  "#64748b",
+  "curacao":      "#0ea5e9",
+  "iran":         "#d946ef",
+  "algeria":      "#14b8a6",
+  "bosnia":       "#e11d48",
+  "uzbekistan":   "#6366f1",
+  "panama":       "#10b981",
+  "iraq":         "#f43f5e",
+  "south_africa": "#fbbf24",
+  "cape_verde":   "#2dd4bf",
+  "czechia":      "#f97316",
+  "qatar":        "#a855f7",
+  "saudi_arabia": "#06b6d4",
+};
+
+export function getTeamColor(teamId: string): string {
+  return TEAM_COLORS[teamId] || "#475569";  // fallback gray
+}
+
 /* ── Champion Types ──────────────────────────────────── */
 
 export interface TeamProfile {

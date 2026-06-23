@@ -1,7 +1,7 @@
 /* ── Odds Trend Line Chart ────────────────────────────── */
 import ReactECharts from "echarts-for-react";
 import { useAppStore } from "../store/useAppStore";
-import { CURVE_COLORS, SEVERITY_COLORS } from "../types";
+import { getTeamColor, SEVERITY_COLORS } from "../types";
 
 export default function ChampionTrend() {
   const oddsTrends = useAppStore((s) => s.oddsTrends);
@@ -81,7 +81,7 @@ export default function ChampionTrend() {
         symbol: "none" as const,
         lineStyle: {
           width: isHovered ? 2 : 1,
-          color: CURVE_COLORS[i % CURVE_COLORS.length],
+          color: getTeamColor(tid),
           opacity: isHovered ? 1 : 0.2,
         },
         // Event markers on the curve
@@ -132,7 +132,7 @@ export default function ChampionTrend() {
             key={tid}
             className="legend-item"
             style={{
-              color: CURVE_COLORS[i % CURVE_COLORS.length],
+              color: getTeamColor(tid),
               opacity: hoveredTeamId && hoveredTeamId !== tid ? 0.3 : 1,
             }}
           >

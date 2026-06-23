@@ -1,7 +1,7 @@
 /* ── Team Ranking Bar Chart (All Teams) ───────────────── */
 import ReactECharts from "echarts-for-react";
 import { useAppStore } from "../store/useAppStore";
-import { CURVE_COLORS } from "../types";
+import { getTeamColor } from "../types";
 
 export default function ChampionRanking() {
   const teams = useAppStore((s) => s.teams);
@@ -86,7 +86,7 @@ export default function ChampionRanking() {
               color: isHovered(t.team_id)
                 ? "#fff"
                 : isSelected(t.team_id)
-                  ? CURVE_COLORS[[...selectedTeamIds].indexOf(t.team_id) % CURVE_COLORS.length]
+                  ? getTeamColor(t.team_id)
                   : "#475569",
               borderRadius: [0, 3, 3, 0],
               opacity: hoveredTeamId && !isHovered(t.team_id) ? 0.3 : 1,
