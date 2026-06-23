@@ -114,7 +114,6 @@ export default function ChampionTrend() {
   const trendInterval = useAppStore((s) => s.trendInterval);
   const setTrendInterval = useAppStore((s) => s.setTrendInterval);
   const dataProvider = useAppStore((s) => s.dataProvider);
-  const hoveredTeamId = useAppStore((s) => s.hoveredTeamId);
   const selectedEventTypes = useAppStore((s) => s.selectedEventTypes);
   const setSelectedEvent = useAppStore((s) => s.setSelectedEvent);
   const setHoveredTeam = useAppStore((s) => s.setHoveredTeam);
@@ -187,7 +186,6 @@ export default function ChampionTrend() {
       // Line series for each team
       ...teamIds.map((tid) => {
         const data = normalized.series.get(tid) || [];
-        const isHovered = !hoveredTeamId || hoveredTeamId === tid;
         const color = getTeamColor(tid);
         return {
           type: "line" as const,
@@ -197,10 +195,7 @@ export default function ChampionTrend() {
           symbol: "none" as const,
           connectNulls: true,
           color,
-          lineStyle: {
-            width: isHovered ? 2 : 1,
-            opacity: isHovered ? 1 : 0.2,
-          },
+          lineStyle: { width: 2 },
           z: 1,
         };
       }),
@@ -319,7 +314,7 @@ export default function ChampionTrend() {
             className="legend-item"
             style={{
               color: getTeamColor(tid),
-              opacity: hoveredTeamId && hoveredTeamId !== tid ? 0.3 : 1,
+              opacity: 1,
             }}
           >
             {oddsTrends[tid]?.flag_emoji} {oddsTrends[tid]?.team_name}
