@@ -57,7 +57,6 @@ interface AppState {
 
 const DEFAULT_TEAMS = [
   "france", "argentina", "spain", "england", "portugal", "germany",
-  "netherlands", "brazil", "usa", "norway", "japan", "morocco",
 ];
 
 export const useAppStore = create<AppState>((set, get) => ({
