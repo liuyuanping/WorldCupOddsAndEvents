@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Tuple
 
 from fastapi import APIRouter, Query, HTTPException
+from pydantic import BaseModel
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -140,6 +141,59 @@ async def get_team_events(
         ],
         "total": len(events),
     }
+
+
+# ── Database Event CRUD ──────────────────────────────
+
+class AddEventRequest(BaseModel):
+    team_id: str
+    team_name: str
+    event_type: str
+    title: str
+    description: str = ""
+    timestamp: str  # ISO format
+    severity: int = 1  # 1-4
+    confidence: float = 1.0
+    source_url: str = ""
+
+
+@router.post("/events/db")
+async def add_database_event(req: AddEventRequest):
+    """Add an event to the offline database."""
+    from app.models.champion import TeamEventIn, TeamEventSeverity
+
+    adapter = registry.get_event_instance("database")
+    if not adapter or not hasattr(adapter, 'add_event'):
+        raise HTTPException(status_code=503, detail="Database event adapter not available")
+
+    event = TeamEventIn(
+        provider="database",
+        source_id="",
+        team_id=req.team_id,
+        team_name=req.team_name,
+        event_type=req.event_type,
+        title=req.title,
+        description=req.description,
+        timestamp=datetime.fromisoformat(req.timestamp),
+        severity=TeamEventSeverity(req.severity),
+        confidence=req.confidence,
+        source_url=req.source_url,
+    )
+    source_id = await adapter.add_event(event)
+    return {"status": "ok", "source_id": source_id}
+
+
+@router.delete("/events/db/{source_id}")
+async def delete_database_event(source_id: str):
+    """Delete an event from the offline database."""
+    adapter = registry.get_event_instance("database")
+    if not adapter or not hasattr(adapter, 'delete_event'):
+        raise HTTPException(status_code=503, detail="Database event adapter not available")
+
+    deleted = await adapter.delete_event(source_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return {"status": "ok"}
 
 
 # ── Monte Carlo Champion Prediction ───────────────────

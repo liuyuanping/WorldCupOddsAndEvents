@@ -17,11 +17,65 @@ from app.adapters.odds.polymarket_champion_adapter import PolymarketChampionAdap
 from app.adapters.events.mock_event_adapter import MockEventAdapter
 from app.adapters.events.mock_team_event_adapter import MockTeamEventAdapter
 from app.adapters.events.gdelt_adapter import GDELTTeamEventAdapter
-from app.adapters.events.offline_event_adapter import OfflineEventAdapter
+from app.adapters.events.database_event_adapter import DatabaseEventAdapter
 from app.api import odds, events, correlations, datasources, champion, cache as cache_api
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+async def _seed_database_events():
+    """Seed initial events if the database table is empty."""
+    from sqlalchemy import select, func
+    from app.models.champion import TeamEventORM
+    from app.database import async_session
+
+    async with async_session() as session:
+        result = await session.execute(
+            select(func.count()).select_from(TeamEventORM).where(TeamEventORM.provider == "database")
+        )
+        count = result.scalar()
+        if count > 0:
+            return  # Already seeded
+
+    # Seed initial events
+    adapter = registry.get_event_instance("database")
+    if not adapter or not hasattr(adapter, 'add_event'):
+        return
+
+    from app.models.champion import TeamEventIn, TeamEventSeverity
+    from datetime import timezone
+
+    seeds = [
+        TeamEventIn(provider="database", source_id="", team_id="france", team_name="法国",
+                    event_type="injury", title="姆巴佩训练中脚踝受伤",
+                    description="法国队核心姆巴佩在训练中脚踝扭伤，队医评估需休养2-3周",
+                    timestamp=datetime(2026, 6, 20, 10, 30, tzinfo=timezone.utc),
+                    severity=TeamEventSeverity.CRITICAL, confidence=0.90),
+        TeamEventIn(provider="database", source_id="", team_id="argentina", team_name="阿根廷",
+                    event_type="squad", title="阿根廷公布26人最终名单",
+                    description="梅西领衔，迪马利亚、阿尔瓦雷斯入选",
+                    timestamp=datetime(2026, 6, 22, 14, 0, tzinfo=timezone.utc),
+                    severity=TeamEventSeverity.MEDIUM, confidence=1.0),
+        TeamEventIn(provider="database", source_id="", team_id="brazil", team_name="巴西",
+                    event_type="form", title="巴西热身赛4-0大胜",
+                    description="巴西队在最后一场热身赛中4-0击败对手，维尼修斯梅开二度",
+                    timestamp=datetime(2026, 6, 18, 20, 0, tzinfo=timezone.utc),
+                    severity=TeamEventSeverity.MEDIUM, confidence=0.95),
+        TeamEventIn(provider="database", source_id="", team_id="germany", team_name="德国",
+                    event_type="injury", title="德国队主力门将训练中受伤",
+                    description="诺伊尔在训练中肩部不适，已接受检查",
+                    timestamp=datetime(2026, 6, 21, 9, 0, tzinfo=timezone.utc),
+                    severity=TeamEventSeverity.HIGH, confidence=0.80),
+        TeamEventIn(provider="database", source_id="", team_id="spain", team_name="西班牙",
+                    event_type="form", title="西班牙热身赛三连胜",
+                    description="西班牙队近期三场热身赛全胜，打进10球仅失1球",
+                    timestamp=datetime(2026, 6, 19, 22, 0, tzinfo=timezone.utc),
+                    severity=TeamEventSeverity.MEDIUM, confidence=0.95),
+    ]
+    for event in seeds:
+        await adapter.add_event(event)
+    logger.info(f"Seeded {len(seeds)} database events")
 
 
 @asynccontextmanager
@@ -38,14 +92,17 @@ async def lifespan(app: FastAPI):
     registry.register_event(MockEventAdapter, "mock_events")
     registry.register_event(MockTeamEventAdapter, "mock_team_events")
     registry.register_event(GDELTTeamEventAdapter, "gdelt")
-    registry.register_event(OfflineEventAdapter, "offline")
+    registry.register_event(DatabaseEventAdapter, "database")
     await registry.enable("mock_odds")
     await registry.enable("mock_champion_odds")
     await registry.enable("polymarket")
     await registry.enable("mock_events")
     await registry.enable("mock_team_events")
     await registry.enable("gdelt")
-    await registry.enable("offline")
+    await registry.enable("database")
+
+    # Seed initial database events if table is empty
+    await _seed_database_events()
 
     logger.info("API ready. Providers: %s", registry.get_all_providers())
 
