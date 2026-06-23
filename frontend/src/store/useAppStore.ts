@@ -83,7 +83,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   selectedBookmaker: "Pinnacle",
   trendInterval: "1w",
-  eventDataProvider: "mock_team_events",
+  eventDataProvider: "database",
   onlineMode: false,
   dataProvider: "polymarket",
 
