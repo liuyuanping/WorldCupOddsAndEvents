@@ -34,8 +34,20 @@ function normalizeSeries(
       tsSet.add(new Date(d.timestamp).getTime());
     }
   }
-  const grid = [...tsSet].sort((a, b) => a - b);
+  let grid = [...tsSet].sort((a, b) => a - b);
   if (grid.length < 2) return { grid, series: new Map() };
+
+  // Cap grid to 500 points to prevent performance issues
+  const MAX_GRID = 500;
+  if (grid.length > MAX_GRID) {
+    const step = (grid.length - 1) / (MAX_GRID - 1);
+    const sampled = [grid[0]];
+    for (let i = 1; i < MAX_GRID - 1; i++) {
+      sampled.push(grid[Math.round(i * step)]);
+    }
+    sampled.push(grid[grid.length - 1]);
+    grid = sampled;
+  }
 
   // Interpolate each team to the common grid
   const result = new Map<string, Array<[number, number]>>();

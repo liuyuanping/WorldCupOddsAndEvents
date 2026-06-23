@@ -328,19 +328,28 @@ async def get_odds_trend(
         # Use Polymarket CLOB price history
         adapter = registry.get_odds_instance("polymarket")
         if adapter and hasattr(adapter, 'get_price_history'):
+            # Map interval to fidelity: shorter intervals = higher fidelity
+            fidelity_map = {"1h": 60, "6h": 60, "1d": 30, "1w": 20, "1m": 10, "all": 5}
+            fidelity = fidelity_map.get(interval, 20)
+
             for tid in tid_list:
                 try:
-                    history = await adapter.get_price_history(tid, interval=interval, fidelity=30)
+                    history = await adapter.get_price_history(tid, interval=interval, fidelity=fidelity)
                     if not history:
                         continue
                     info = adapter.POLYMARKET_TEAMS.get(tid, {}) if hasattr(adapter, 'POLYMARKET_TEAMS') else {}
+                    # Downsample if too many points (>500): keep first, last, and evenly spaced
+                    pts = history
+                    if len(pts) > 500:
+                        step = len(pts) / 500
+                        pts = [pts[0]] + [pts[int(i * step)] for i in range(1, 500)] + [pts[-1]]
                     result[tid] = {
                         "team_name": info.get("name", tid),
                         "flag_emoji": info.get("flag", ""),
                         "data": [
                             {"timestamp": h["timestamp"], "odds": round(1.0 / max(h["price"], 0.0001), 2),
                              "prob": round(h["price"], 4)}
-                            for h in history
+                            for h in pts
                         ],
                     }
                 except Exception as e:
