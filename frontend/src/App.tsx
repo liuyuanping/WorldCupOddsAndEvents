@@ -1,6 +1,5 @@
 import { useEffect } from "react";
 import { useAppStore } from "./store/useAppStore";
-import TopPicks from "./components/TopPicks";
 import ChampionRanking from "./components/ChampionRanking";
 import ChampionTrend from "./components/ChampionTrend";
 import ChampionEvents from "./components/ChampionEvents";
@@ -11,7 +10,6 @@ export default function App() {
   const loadTeams = useAppStore((s) => s.loadTeams);
   const loadTrends = useAppStore((s) => s.loadTrends);
   const loadEvents = useAppStore((s) => s.loadEvents);
-  const loadPrediction = useAppStore((s) => s.loadPrediction);
   const selectedTeamIds = useAppStore((s) => s.selectedTeamIds);
   const dataProvider = useAppStore((s) => s.dataProvider);
   const setDataProvider = useAppStore((s) => s.setDataProvider);
@@ -19,7 +17,6 @@ export default function App() {
   useEffect(() => {
     loadTeams();
     loadEvents();
-    loadPrediction();
   }, [dataProvider]);
 
   useEffect(() => {
@@ -45,7 +42,6 @@ export default function App() {
             <option value="polymarket">📊 Polymarket (真实数据)</option>
             <option value="mock_champion_odds">🔬 Mock (模拟数据)</option>
           </select>
-          <TopPicks />
         </div>
       </header>
 
