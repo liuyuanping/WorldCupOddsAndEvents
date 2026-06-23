@@ -41,24 +41,21 @@ export default function ChampionEvents() {
         {displayEvent ? (
           <>
             <div className="popup-header">
+              <span className="popup-team" style={{ color: getTeamColor(displayEvent.team_id) }}>
+                {displayEvent.team_name}
+              </span>
               <span
                 className="popup-severity"
                 style={{ background: SEVERITY_COLORS[displayEvent.severity] || "#94a3b8" }}
               >
                 {SEVERITY_LABELS[displayEvent.severity]}
               </span>
-              <span className="popup-team" style={{ color: getTeamColor(displayEvent.team_id) }}>
-                {displayEvent.team_name}
-              </span>
-              {selectedEvent && (
-                <button className="popup-close" onClick={() => setSelectedEvent(null)}>✕</button>
-              )}
             </div>
             <h4>{displayEvent.title}</h4>
             <p className="popup-desc">{displayEvent.description || "暂无详细描述"}</p>
             <div className="popup-meta">
               <span>类型: {displayEvent.event_type}</span>
-              <span>置信度: {(displayEvent.confidence * 100).toFixed(0)}%</span>
+              <span>来源: Mock Event Provider</span>
               <span>{new Date(displayEvent.timestamp).toLocaleString("zh-CN")}</span>
             </div>
           </>

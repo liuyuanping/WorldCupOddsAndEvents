@@ -473,4 +473,23 @@ body {
   margin-top: 0.3rem;
 }
 
+.popup-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 0.3rem;
+}
+
+.popup-severity {
+  font-size: 0.55rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 2px;
+  color: white;
+}
+
+.popup-team {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
 /* (styles consolidated above) */
