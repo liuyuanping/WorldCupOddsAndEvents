@@ -4,6 +4,7 @@ import TopPicks from "./components/TopPicks";
 import ChampionRanking from "./components/ChampionRanking";
 import ChampionTrend from "./components/ChampionTrend";
 import ChampionEvents from "./components/ChampionEvents";
+import TeamSelector from "./components/TeamSelector";
 import "./App.css";
 
 export default function App() {
@@ -55,8 +56,9 @@ export default function App() {
           <ChampionRanking />
         </section>
 
-        {/* Center: Trend Chart */}
+        {/* Center: Selector + Trend Chart */}
         <section className="panel-center">
+          <TeamSelector />
           <ChampionTrend />
         </section>
 

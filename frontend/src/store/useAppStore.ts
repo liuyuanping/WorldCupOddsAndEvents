@@ -44,6 +44,10 @@ interface AppState {
   loadEvents: () => Promise<void>;
   loadPrediction: () => Promise<void>;
   toggleTeam: (tid: string) => void;
+  selectTeams: (tids: string[]) => void;
+  selectTopN: (n: number) => void;
+  selectAll: () => void;
+  deselectAll: () => void;
   setDataProvider: (p: string) => void;
   setSelectedBookmaker: (bm: string) => void;
   setHoveredTeam: (tid: string | null) => void;
@@ -142,11 +146,40 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (next.has(tid)) {
       if (next.size > 1) next.delete(tid);
     } else {
-      if (next.size < 8) next.add(tid);
+      next.add(tid);
     }
     set({ selectedTeamIds: next });
-    // Reload trend for selected teams
     get().loadTrends([...next]);
+  },
+
+  selectTeams: (tids: string[]) => {
+    if (tids.length === 0) return;
+    set({ selectedTeamIds: new Set(tids) });
+    get().loadTrends(tids);
+  },
+
+  selectTopN: (n: number) => {
+    const state = get();
+    const sorted = [...state.teams]
+      .sort((a, b) => b.implied_probability - a.implied_probability)
+      .slice(0, n)
+      .map((t) => t.team_id);
+    set({ selectedTeamIds: new Set(sorted) });
+    get().loadTrends(sorted);
+  },
+
+  selectAll: () => {
+    const all = get().teams.map((t) => t.team_id);
+    set({ selectedTeamIds: new Set(all) });
+    get().loadTrends(all);
+  },
+
+  deselectAll: () => {
+    const first = get().teams[0]?.team_id;
+    if (first) {
+      set({ selectedTeamIds: new Set([first]) });
+      get().loadTrends([first]);
+    }
   },
 
   setSelectedBookmaker: (bm: string) => {

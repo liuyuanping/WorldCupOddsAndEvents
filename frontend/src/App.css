@@ -292,3 +292,118 @@ body {
   font-size: 0.7rem;
   color: var(--text-muted);
 }
+
+/* ── Team Selector ──────────────────── */
+
+.team-selector {
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.selector-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+
+.selector-header h3 {
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.selector-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.action-btn {
+  padding: 0.15rem 0.5rem;
+  font-size: 0.65rem;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.action-btn:hover {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.team-search {
+  width: 100%;
+  padding: 0.3rem 0.5rem;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  margin-bottom: 0.4rem;
+}
+
+.team-search::placeholder {
+  color: var(--text-muted);
+}
+
+.team-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  max-height: 156px;
+  overflow-y: auto;
+}
+
+.team-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.15rem 0.4rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.team-chip:hover {
+  background: var(--border);
+}
+
+.team-chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.team-chip-flag {
+  font-size: 0.85rem;
+}
+
+.team-chip-name {
+  font-weight: 500;
+}
+
+.team-chip-prob {
+  color: var(--text-muted);
+  font-size: 0.6rem;
+}
+
+.team-chip.active .team-chip-prob {
+  color: rgba(255,255,255,0.7);
+}
+
+/* ── Panel Center scroll ────────────── */
+
+.panel-center {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
