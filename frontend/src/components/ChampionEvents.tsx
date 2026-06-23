@@ -33,6 +33,31 @@ export default function ChampionEvents() {
     <div className="panel events-panel">
       <h3>📰 球队事件</h3>
 
+      {/* Event Detail Popup */}
+      {selectedEvent && (
+        <div className="event-detail-popup">
+          <div className="popup-header">
+            <span
+              className="popup-severity"
+              style={{ background: SEVERITY_COLORS[selectedEvent.severity] || "#94a3b8" }}
+            >
+              {SEVERITY_LABELS[selectedEvent.severity]}
+            </span>
+            <span className="popup-team" style={{ color: getTeamColor(selectedEvent.team_id) }}>
+              {selectedEvent.team_name}
+            </span>
+            <button className="popup-close" onClick={() => setSelectedEvent(null)}>✕</button>
+          </div>
+          <h4>{selectedEvent.title}</h4>
+          <p className="popup-desc">{selectedEvent.description || "暂无详细描述"}</p>
+          <div className="popup-meta">
+            <span>类型: {selectedEvent.event_type}</span>
+            <span>置信度: {(selectedEvent.confidence * 100).toFixed(0)}%</span>
+            <span>{new Date(selectedEvent.timestamp).toLocaleString("zh-CN")}</span>
+          </div>
+        </div>
+      )}
+
       {/* Type filter */}
       <div className="event-filters">
         {eventTypes.slice(0, 8).map((type) => (
