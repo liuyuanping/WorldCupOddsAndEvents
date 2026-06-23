@@ -10,6 +10,9 @@ const TIME_INTERVALS = [
   { label: "1d", value: "1d" },
   { label: "1w", value: "1w" },
   { label: "1m", value: "1m" },
+  { label: "3m", value: "3m" },
+  { label: "6m", value: "6m" },
+  { label: "1y", value: "1y" },
   { label: "All", value: "all" },
 ];
 
