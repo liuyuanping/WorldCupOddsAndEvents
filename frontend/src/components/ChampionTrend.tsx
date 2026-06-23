@@ -116,6 +116,8 @@ export default function ChampionTrend() {
   const dataProvider = useAppStore((s) => s.dataProvider);
   const hoveredTeamId = useAppStore((s) => s.hoveredTeamId);
   const selectedEventTypes = useAppStore((s) => s.selectedEventTypes);
+  const setSelectedEvent = useAppStore((s) => s.setSelectedEvent);
+  const setHoveredTeam = useAppStore((s) => s.setHoveredTeam);
 
   const teamIds = Object.keys(oddsTrends);
 
@@ -178,42 +180,76 @@ export default function ChampionTrend() {
       name: "夺冠概率 (%)",
       axisLabel: { formatter: "{value}%", fontSize: 11 },
     },
-    series: teamIds.map((tid) => {
-      const data = normalized.series.get(tid) || [];
-      const isHovered = !hoveredTeamId || hoveredTeamId === tid;
-      const color = getTeamColor(tid);
-      return {
-        type: "line" as const,
-        name: `${oddsTrends[tid]?.flag_emoji || ""} ${oddsTrends[tid]?.team_name || tid}`,
-        data,
-        smooth: true,
-        symbol: "none" as const,
-        connectNulls: true,
-        color,
-        lineStyle: {
-          width: isHovered ? 2 : 1,
-          opacity: isHovered ? 1 : 0.2,
-        },
-        markPoint: {
-          silent: true,
+    series: [
+      // Line series for each team
+      ...teamIds.map((tid) => {
+        const data = normalized.series.get(tid) || [];
+        const isHovered = !hoveredTeamId || hoveredTeamId === tid;
+        const color = getTeamColor(tid);
+        return {
+          type: "line" as const,
+          name: `${oddsTrends[tid]?.flag_emoji || ""} ${oddsTrends[tid]?.team_name || tid}`,
+          data,
+          smooth: true,
+          symbol: "none" as const,
+          connectNulls: true,
+          color,
+          lineStyle: {
+            width: isHovered ? 2 : 1,
+            opacity: isHovered ? 1 : 0.2,
+          },
+          z: 1,
+        };
+      }),
+      // Event scatter series — one per team for proper coloring
+      ...teamIds.map((tid) => {
+        const teamColor = getTeamColor(tid);
+        const teamEvents = filteredEvents.filter((e) => e.team_id === tid);
+        if (teamEvents.length === 0) return null;
+        // Find nearest y-values for each event
+        const lineData = normalized.series.get(tid) || [];
+        const scatterData = teamEvents.map((e) => {
+          const evtTs = new Date(e.timestamp).getTime();
+          let nearest = lineData.length > 0 ? lineData[0] : [evtTs, 0];
+          for (const pt of lineData) {
+            if (Math.abs(pt[0] - evtTs) < Math.abs(nearest[0] - evtTs)) nearest = pt;
+          }
+          return {
+            value: [nearest[0], nearest[1]],
+            eventTitle: e.title,
+            eventDesc: e.description || "",
+            eventType: e.event_type,
+            eventSeverity: e.severity,
+            eventTime: e.timestamp,
+            teamId: tid,
+            teamName: e.team_name,
+          };
+        });
+        return {
+          type: "scatter" as const,
+          name: `${oddsTrends[tid]?.flag_emoji || ""} ${oddsTrends[tid]?.team_name || tid} · 事件`,
+          data: scatterData,
           symbol: "triangle",
-          symbolSize: 10,
-          data: filteredEvents
-            .filter((e) => e.team_id === tid)
-            .map((e) => {
-              const evtTs = new Date(e.timestamp).getTime();
-              const nearest = data.reduce((prev: [number, number], curr: [number, number]) =>
-                Math.abs(curr[0] - evtTs) < Math.abs(prev[0] - evtTs) ? curr : prev, data[0] || [0, 0]
-              );
-              return {
-                name: e.title,
-                coord: [nearest[0], nearest[1]],
-                itemStyle: { color: SEVERITY_COLORS[e.severity] || "#f59e0b" },
-              };
-            }),
-        },
-      };
-    }),
+          symbolSize: 12,
+          symbolRotate: 180,
+          color: teamColor,
+          z: 10,
+          tooltip: {
+            trigger: "item" as const,
+            formatter: (p: any) => {
+              const d = p.data;
+              const sevLabels = ["", "低", "中", "高", "严重"];
+              const sev = sevLabels[d.eventSeverity] || "?";
+              const t = new Date(d.eventTime).toLocaleString("zh-CN");
+              return `<b>🔺 ${d.eventTitle}</b><br/>
+                ${d.eventDesc}<br/>
+                <span style="color:#94a3b8">${d.teamName} · ${d.eventType} · 严重度:${sev} · ${t}</span><br/>
+                <span style="color:#f59e0b">点击查看详情</span>`;
+            },
+          },
+        };
+      }).filter(Boolean),
+    ],
   };
 
   return (
@@ -246,7 +282,30 @@ export default function ChampionTrend() {
           )}
         </div>
       </div>
-      <ReactECharts option={option} style={{ height: 360, width: "100%" }} notMerge={true} />
+      <ReactECharts
+        option={option}
+        style={{ height: 360, width: "100%" }}
+        notMerge={true}
+        onEvents={{
+          click: (params: any) => {
+            // Detect click on scatter (event) point
+            if (params.componentType === "series" && params.seriesType === "scatter" && params.data) {
+              const d = params.data;
+              setSelectedEvent({
+                team_id: d.teamId,
+                team_name: d.teamName,
+                event_type: d.eventType,
+                title: d.eventTitle,
+                description: d.eventDesc,
+                timestamp: d.eventTime,
+                severity: d.eventSeverity,
+                confidence: 1,
+              });
+              setHoveredTeam(d.teamId);
+            }
+          },
+        }}
+      />
       <div className="trend-legend">
         {teamIds.map((tid) => (
           <span
