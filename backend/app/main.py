@@ -60,30 +60,38 @@ async def _seed_database_events():
 
     async with async_session() as session:
         added = 0
+        errors = 0
         for item in events_data:
-            team_id = item["team_id"]
-            if team_id in TEAM_ID_FIX:
-                team_id = TEAM_ID_FIX[team_id]
-            severity = min(int(item.get("severity", 2)), 4)
-            ts = datetime.fromisoformat(item["timestamp"]).replace(tzinfo=timezone.utc)
-            source_id = f"db_{team_id}_{ts.strftime('%Y%m%d%H%M%S')}_{added}"
+            try:
+                team_id = item.get("team_id", "")
+                if team_id in TEAM_ID_FIX:
+                    team_id = TEAM_ID_FIX[team_id]
+                if not team_id:
+                    errors += 1
+                    continue
+                severity = min(int(item.get("severity", 2)), 4)
+                ts = datetime.fromisoformat(item["timestamp"]).replace(tzinfo=timezone.utc)
+                source_id = f"db_{team_id}_{ts.strftime('%Y%m%d%H%M%S')}_{added}"
 
-            entry = TeamEventORM(
-                provider="database",
-                source_id=source_id,
-                team_id=team_id,
-                team_name=item["team_name"],
-                event_type=item["event_type"],
-                title=item["title"],
-                description=(item.get("description") or "")[:500],
-                timestamp=ts,
-                severity=severity,
-                confidence=float(item.get("confidence", 0.85)),
-            )
-            session.add(entry)
-            added += 1
+                entry = TeamEventORM(
+                    provider="database",
+                    source_id=source_id,
+                    team_id=team_id,
+                    team_name=item.get("team_name", ""),
+                    event_type=item.get("event_type", "other"),
+                    title=item.get("title", ""),
+                    description=(item.get("description") or "")[:500],
+                    timestamp=ts,
+                    severity=severity,
+                    confidence=float(item.get("confidence", 0.85)),
+                )
+                session.add(entry)
+                added += 1
+            except Exception as e:
+                logger.warning(f"Skipping bad event row: {e}")
+                errors += 1
         await session.commit()
-        logger.info(f"Seeded {added} database events from JSON")
+        logger.info(f"Seeded {added} events (+{errors} skipped) from JSON")
     logger.info(f"Seeded {len(seeds)} database events")
 
 
@@ -111,7 +119,10 @@ async def lifespan(app: FastAPI):
     await registry.enable("database")
 
     # Seed initial database events if table is empty
-    await _seed_database_events()
+    try:
+        await _seed_database_events()
+    except Exception as e:
+        logger.error(f"Database event seeding failed (non-fatal): {e}")
 
     logger.info("API ready. Providers: %s", registry.get_all_providers())
 
