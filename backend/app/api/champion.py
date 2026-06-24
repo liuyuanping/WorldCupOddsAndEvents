@@ -386,9 +386,9 @@ async def get_odds_trend(
         # Use Polymarket CLOB price history
         adapter = registry.get_odds_instance("polymarket")
         if adapter and hasattr(adapter, 'get_price_history'):
-            # Fidelity: higher = denser points. CLOB retains ~30 days regardless.
-            # Range 1 (coarsest) → 60 (finest)
-            fidelity_map = {"1h": 60, "6h": 60, "1d": 30, "1w": 20, "1m": 10, "all": 1}
+            # Fidelity + startTs gives full history from market creation (~2025-07-01).
+            # Lower fidelity = more data points. 720 ≈ ~700 pts/year, 60 ≈ ~15K pts/year.
+            fidelity_map = {"1h": 60, "6h": 120, "1d": 360, "1w": 720, "1m": 720, "all": 720}
             fidelity = fidelity_map.get(interval, 20)
 
             for tid in tid_list:

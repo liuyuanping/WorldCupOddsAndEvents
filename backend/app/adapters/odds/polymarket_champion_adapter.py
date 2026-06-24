@@ -206,10 +206,13 @@ class PolymarketChampionAdapter(OddsProviderAdapter):
         """
         Fetch price history for a team from Polymarket CLOB API.
 
+        Uses startTs to get data beyond the default 30-day window for longer intervals.
+        Market created ~2025-07-02.
+
         Args:
             team_id: Team identifier (e.g., "argentina")
-            interval: Time interval (1d, 1w, 1m, max)
-            fidelity: Data fidelity
+            interval: Time interval (1d, 1w, 1m, all)
+            fidelity: Data fidelity (higher = less data)
         """
         info = POLYMARKET_TEAMS.get(team_id)
         if not info or not info["token_id"]:
@@ -226,11 +229,29 @@ class PolymarketChampionAdapter(OddsProviderAdapter):
 
         try:
             url = f"{CLOB_API}/prices-history"
-            params = {
-                "interval": interval,
+            params: dict = {
                 "market": token_id,
                 "fidelity": str(fidelity),
             }
+
+            now_dt = datetime.now(timezone.utc)
+            now_ts = int(now_dt.timestamp())
+
+            # Short intervals (<1 month) use the interval param (CLOB default ~30d)
+            # Long intervals use startTs to go back to market creation
+            MARKET_CREATED_TS = 1751328000  # ~2025-07-01
+
+            if interval in ("1h", "6h"):
+                # Short intervals: use interval param for max CLOB resolution
+                params["interval"] = interval
+            elif interval in ("1d",):
+                params["interval"] = interval
+            elif interval in ("1w", "1m"):
+                # Use startTs for more control
+                params["startTs"] = str(now_ts - self._interval_seconds(interval))
+            elif interval in ("all", "max"):
+                params["startTs"] = str(MARKET_CREATED_TS)
+
             resp = await self._client.get(url, params=params)
             resp.raise_for_status()
             data = resp.json()
@@ -251,6 +272,10 @@ class PolymarketChampionAdapter(OddsProviderAdapter):
         except Exception as e:
             logger.error(f"Failed to fetch price history for {team_id}: {e}")
             return []
+
+    def _interval_seconds(self, interval: str) -> int:
+        SECONDS = {"1h": 3600, "6h": 21600, "1d": 86400, "1w": 604800, "1m": 2592000}
+        return SECONDS.get(interval, 604800)
 
     async def _fetch_live_prices(self) -> Dict[str, float]:
         """Fetch current prices from Polymarket Gamma API."""
