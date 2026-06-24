@@ -38,6 +38,7 @@ interface AppState {
   selectedBookmaker: string;
   trendInterval: string;
   onlineMode: boolean;
+  singleSelectMode: boolean;
   dataProvider: string;
 
   /* Actions */
@@ -55,6 +56,7 @@ interface AppState {
   setTrendInterval: (interval: string) => void;
   setEventDataProvider: (p: string) => void;
   toggleOnlineMode: () => void;
+  toggleSelectMode: () => void;
   setHoveredTeam: (tid: string | null) => void;
   setSelectedEvent: (evt: TeamEventData | null) => void;
   toggleEventType: (t: string) => void;
@@ -85,6 +87,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   trendInterval: "1w",
   eventDataProvider: "database",
   onlineMode: false,
+  singleSelectMode: false,
   dataProvider: "polymarket",
 
   loadTeams: async () => {
@@ -150,14 +153,25 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   toggleTeam: (tid: string) => {
-    const next = new Set(get().selectedTeamIds);
-    if (next.has(tid)) {
-      if (next.size > 1) next.delete(tid);
+    const state = get();
+    if (state.singleSelectMode) {
+      set({ selectedTeamIds: new Set([tid]) });
+      state.loadTrends([tid]);
     } else {
-      next.add(tid);
+      const next = new Set(state.selectedTeamIds);
+      if (next.has(tid)) {
+        if (next.size > 1) next.delete(tid);
+      } else {
+        next.add(tid);
+      }
+      set({ selectedTeamIds: next });
+      state.loadTrends([...next]);
     }
-    set({ selectedTeamIds: next });
-    get().loadTrends([...next]);
+  },
+
+  toggleSelectMode: () => {
+    const next = !get().singleSelectMode;
+    set({ singleSelectMode: next });
   },
 
   selectTeams: (tids: string[]) => {

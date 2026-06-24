@@ -525,3 +525,23 @@ body {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.7; }
 }
+
+.mode-toggle {
+  padding: 0.15rem 0.5rem;
+  font-size: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+  margin-right: 0.3rem;
+}
+.mode-toggle.multi {
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+}
+.mode-toggle.single {
+  background: #7c3aed;
+  color: white;
+  border-color: #7c3aed;
+}
+.mode-toggle:hover { filter: brightness(1.2); }

@@ -10,6 +10,8 @@ export default function TeamSelector() {
   const selectTopN = useAppStore((s) => s.selectTopN);
   const selectAll = useAppStore((s) => s.selectAll);
   const deselectAll = useAppStore((s) => s.deselectAll);
+  const singleSelectMode = useAppStore((s) => s.singleSelectMode);
+  const toggleSelectMode = useAppStore((s) => s.toggleSelectMode);
   const [search, setSearch] = useState("");
 
   const sorted = useMemo(
@@ -33,6 +35,13 @@ export default function TeamSelector() {
     <div className="panel team-selector">
       <div className="selector-header">
         <h3>🎯 球队选择 ({selectedCount}/{teams.length})</h3>
+        <button
+          className={`mode-toggle ${singleSelectMode ? "single" : "multi"}`}
+          onClick={toggleSelectMode}
+          title={singleSelectMode ? "当前: 单选模式" : "当前: 多选模式"}
+        >
+          {singleSelectMode ? "🔘 单选" : "☑️ 多选"}
+        </button>
         <div className="selector-actions">
           <button className="action-btn" onClick={() => selectTopN(3)}>
             Top 3
