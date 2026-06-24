@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 async def _seed_database_events():
     """Seed initial events if the database table is empty."""
+    import json
     from sqlalchemy import select, func
     from app.models.champion import TeamEventORM
     from app.database import async_session
@@ -38,54 +39,51 @@ async def _seed_database_events():
         if count > 0:
             return  # Already seeded
 
-    # Seed initial events
-    adapter = registry.get_event_instance("database")
-    if not adapter or not hasattr(adapter, 'add_event'):
-        return
-
-    from app.models.champion import TeamEventIn, TeamEventSeverity
+    # Load from JSON data file
+    import json
+    from pathlib import Path
     from datetime import timezone
 
-    matches = [
-        # Round 1
-        ("brazil","巴西","serbia","塞尔维亚","2-0","A","2026-06-11T20:00:00Z"),
-        ("france","法国","peru","秘鲁","3-1","B","2026-06-12T17:00:00Z"),
-        ("argentina","阿根廷","egypt","埃及","2-0","C","2026-06-12T20:00:00Z"),
-        ("england","英格兰","iran","伊朗","4-0","D","2026-06-13T17:00:00Z"),
-        ("spain","西班牙","japan","日本","2-1","E","2026-06-13T20:00:00Z"),
-        ("germany","德国","canada","加拿大","1-1","F","2026-06-14T17:00:00Z"),
-        ("portugal","葡萄牙","ghana","加纳","3-0","G","2026-06-14T20:00:00Z"),
-        ("netherlands","荷兰","south_korea","韩国","2-0","H","2026-06-15T17:00:00Z"),
-        # Round 2
-        ("brazil","巴西","switzerland","瑞士","2-1","A","2026-06-16T20:00:00Z"),
-        ("france","法国","denmark","丹麦","1-0","B","2026-06-17T17:00:00Z"),
-        ("argentina","阿根廷","poland","波兰","3-2","C","2026-06-17T20:00:00Z"),
-        ("england","英格兰","usa","美国","1-0","D","2026-06-18T17:00:00Z"),
-        ("spain","西班牙","croatia","克罗地亚","0-0","E","2026-06-18T20:00:00Z"),
-        ("germany","德国","morocco","摩洛哥","3-1","F","2026-06-19T17:00:00Z"),
-        ("portugal","葡萄牙","uruguay","乌拉圭","1-1","G","2026-06-19T20:00:00Z"),
-        ("netherlands","荷兰","senegal","塞内加尔","2-1","H","2026-06-20T17:00:00Z"),
-        # Round 3
-        ("brazil","巴西","mexico","墨西哥","3-0","A","2026-06-22T20:00:00Z"),
-        ("france","法国","norway","挪威","2-0","B","2026-06-23T17:00:00Z"),
-        ("argentina","阿根廷","colombia","哥伦比亚","1-0","C","2026-06-23T20:00:00Z"),
-        ("england","英格兰","scotland","苏格兰","2-1","D","2026-06-24T17:00:00Z"),
-        ("spain","西班牙","morocco","摩洛哥","1-0","E","2026-06-24T20:00:00Z"),
-    ]
-    for hid, hn, aid, an, score, grp, ts in matches:
-        hs, aws = score.split("-")
-        await adapter.add_event(TeamEventIn(provider="database", source_id="",
-            team_id=hid, team_name=hn, event_type="match_result",
-            title=f"{hn} {score} {an}",
-            description=f"2026世界杯{grp}组 · {hn} {score} {an}",
-            timestamp=datetime.fromisoformat(ts), severity=TeamEventSeverity.MEDIUM, confidence=1.0))
-        await adapter.add_event(TeamEventIn(provider="database", source_id="",
-            team_id=aid, team_name=an, event_type="match_result",
-            title=f"{an} {aws}-{hs} {hn}",
-            description=f"2026世界杯{grp}组 · {hn} {score} {an}",
-            timestamp=datetime.fromisoformat(ts), severity=TeamEventSeverity.MEDIUM, confidence=1.0))
+    data_file = Path("/app/data/2026世界杯各队重大事件（时间精细化版）.json")
+    if not data_file.exists():
+        logger.warning(f"Seed data file not found: {data_file}")
+        return
 
-    logger.info(f"Seeded {len(matches)*2} match events + 5 news events")
+    with open(data_file, "r", encoding="utf-8") as f:
+        events_data = json.load(f)
+
+    # Fix team_id mappings
+    TEAM_ID_FIX = {
+        "cape-verde": "cape_verde", "dr-congo": "congo_dr", "ivory-coast": "ivory_coast",
+        "korea": "south_korea", "czech": "czechia", "turkey": "turkiye",
+    }
+
+    async with async_session() as session:
+        added = 0
+        for item in events_data:
+            team_id = item["team_id"]
+            if team_id in TEAM_ID_FIX:
+                team_id = TEAM_ID_FIX[team_id]
+            severity = min(int(item.get("severity", 2)), 4)
+            ts = datetime.fromisoformat(item["timestamp"]).replace(tzinfo=timezone.utc)
+            source_id = f"db_{team_id}_{ts.strftime('%Y%m%d%H%M%S')}_{added}"
+
+            entry = TeamEventORM(
+                provider="database",
+                source_id=source_id,
+                team_id=team_id,
+                team_name=item["team_name"],
+                event_type=item["event_type"],
+                title=item["title"],
+                description=(item.get("description") or "")[:500],
+                timestamp=ts,
+                severity=severity,
+                confidence=float(item.get("confidence", 0.85)),
+            )
+            session.add(entry)
+            added += 1
+        await session.commit()
+        logger.info(f"Seeded {added} database events from JSON")
     logger.info(f"Seeded {len(seeds)} database events")
 
 
