@@ -117,6 +117,7 @@ export default function ChampionTrend() {
   const selectedEventTypes = useAppStore((s) => s.selectedEventTypes);
   const setSelectedEvent = useAppStore((s) => s.setSelectedEvent);
   const setHoveredTeam = useAppStore((s) => s.setHoveredTeam);
+  const setEventTimeRange = useAppStore((s) => s.setEventTimeRange);
 
   const teamIds = Object.keys(oddsTrends);
 
@@ -290,6 +291,15 @@ export default function ChampionTrend() {
         style={{ height: 720, width: "100%" }}
         notMerge={true}
         onEvents={{
+          dataZoom: (params: any) => {
+            const batch = params.batch?.[0] || params;
+            if (batch.startValue != null && batch.endValue != null) {
+              setEventTimeRange({
+                start: new Date(batch.startValue).toISOString(),
+                end: new Date(batch.endValue).toISOString(),
+              });
+            }
+          },
           click: (params: any) => {
             // Detect click on scatter (event) point
             if (params.componentType === "series" && params.seriesType === "scatter" && params.data) {

@@ -12,6 +12,7 @@ export default function ChampionEvents() {
   const setSelectedEvent = useAppStore((s) => s.setSelectedEvent);
   const selectedEventTypes = useAppStore((s) => s.selectedEventTypes);
   const toggleEventType = useAppStore((s) => s.toggleEventType);
+  const eventTimeRange = useAppStore((s) => s.eventTimeRange);
   const eventDataProvider = useAppStore((s) => s.eventDataProvider);
   const setEventDataProvider = useAppStore((s) => s.setEventDataProvider);
 
@@ -21,10 +22,19 @@ export default function ChampionEvents() {
     if (selectedEventTypes.size > 0) {
       result = result.filter((e) => selectedEventTypes.has(e.event_type));
     }
+    // Filter by time range
+    if (eventTimeRange) {
+      const start = new Date(eventTimeRange.start).getTime();
+      const end = new Date(eventTimeRange.end).getTime();
+      result = result.filter((e) => {
+        const t = new Date(e.timestamp).getTime();
+        return t >= start && t <= end;
+      });
+    }
     return result.sort(
       (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     );
-  }, [events, selectedTeamIds, selectedEventTypes]);
+  }, [events, selectedTeamIds, selectedEventTypes, eventTimeRange]);
 
   const eventTypes = useMemo(() => {
     const types = new Set(events.map((e) => e.event_type));

@@ -33,6 +33,7 @@ interface AppState {
   /* Prediction */
   prediction: ChampionPrediction | null;
   predictionLoading: boolean;
+  eventTimeRange: { start: string; end: string } | null;
 
   /* Bookmaker / Provider */
   selectedBookmaker: string;
@@ -60,6 +61,7 @@ interface AppState {
   setHoveredTeam: (tid: string | null) => void;
   setSelectedEvent: (evt: TeamEventData | null) => void;
   toggleEventType: (t: string) => void;
+  setEventTimeRange: (r: { start: string; end: string } | null) => void;
 }
 
 const DEFAULT_TEAMS = [
@@ -87,6 +89,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   trendInterval: "1w",
   eventDataProvider: "database",
   onlineMode: false,
+  eventTimeRange: null,
   singleSelectMode: false,
   dataProvider: "polymarket",
 
@@ -211,7 +214,22 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setTrendInterval: (interval: string) => {
     set({ trendInterval: interval });
+    // Compute event time range from interval
+    const now = new Date();
+    const ranges: Record<string, { start: string; end: string } | null> = {
+      "1h":  { start: new Date(now.getTime() - 3600000).toISOString(), end: now.toISOString() },
+      "6h":  { start: new Date(now.getTime() - 21600000).toISOString(), end: now.toISOString() },
+      "1d":  { start: new Date(now.getTime() - 86400000).toISOString(), end: now.toISOString() },
+      "1w":  { start: new Date(now.getTime() - 604800000).toISOString(), end: now.toISOString() },
+      "1m":  { start: new Date(now.getTime() - 2592000000).toISOString(), end: now.toISOString() },
+      "all": null,
+    };
+    set({ eventTimeRange: ranges[interval] || null });
     get().loadTrends([...get().selectedTeamIds]);
+  },
+
+  setEventTimeRange: (r) => {
+    set({ eventTimeRange: r });
   },
 
   setEventDataProvider: (p: string) => {
