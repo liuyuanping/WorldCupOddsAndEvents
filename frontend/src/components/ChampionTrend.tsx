@@ -2,7 +2,7 @@
 import { useMemo } from "react";
 import ReactECharts from "echarts-for-react";
 import { useAppStore } from "../store/useAppStore";
-import { getTeamColor, SEVERITY_COLORS } from "../types";
+import { getTeamColor } from "../types";
 
 /** Polymarket CLOB API supported intervals (30-day data retention) */
 const TIME_INTERVALS = [
@@ -252,10 +252,11 @@ export default function ChampionTrend() {
               const sevLabels = ["", "低", "中", "高", "严重"];
               const sev = sevLabels[d.eventSeverity] || "?";
               const t = new Date(d.eventTime).toLocaleString("zh-CN");
-              return `<b>🔺 ${d.eventTitle}</b><br/>
+              return `<div style="max-width:320px;word-wrap:break-word;overflow-wrap:break-word;white-space:normal;">
+                <b>🔺 ${d.eventTitle}</b><br/>
                 ${d.eventDesc}<br/>
                 <span style="color:#94a3b8">${d.teamName} · ${d.eventType} · 严重度:${sev} · ${t}</span><br/>
-                <span style="color:#f59e0b">点击查看详情</span>`;
+                <span style="color:#f59e0b">点击查看详情</span></div>`;
             },
           },
         };
