@@ -118,6 +118,7 @@ export default function ChampionTrend() {
   const setSelectedEvent = useAppStore((s) => s.setSelectedEvent);
   const setHoveredTeam = useAppStore((s) => s.setHoveredTeam);
   const setEventTimeRange = useAppStore((s) => s.setEventTimeRange);
+  const eventTimeRange = useAppStore((s) => s.eventTimeRange);
 
   const teamIds = Object.keys(oddsTrends);
 
@@ -135,10 +136,16 @@ export default function ChampionTrend() {
     return <div className="panel loading">选择球队查看胜率趋势</div>;
   }
 
-  // Filter events for selected teams
+  // Filter events for selected teams + time range
   const filteredEvents = events.filter((e) => {
     if (!selectedTeamIds.has(e.team_id)) return false;
     if (selectedEventTypes.size > 0 && !selectedEventTypes.has(e.event_type)) return false;
+    if (eventTimeRange) {
+      const t = new Date(e.timestamp).getTime();
+      const start = new Date(eventTimeRange.start).getTime();
+      const end = new Date(eventTimeRange.end).getTime();
+      if (t < start || t > end) return false;
+    }
     return true;
   });
 
