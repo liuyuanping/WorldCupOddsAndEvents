@@ -228,9 +228,11 @@ export default function ChampionTrend() {
           name: `${oddsTrends[tid]?.flag_emoji || ""} ${oddsTrends[tid]?.team_name || tid} · 事件`,
           data: scatterData,
           symbol: "triangle",
-          symbolSize: 12,
+          symbolSize: 13,
           symbolRotate: 180,
           color: teamColor,
+          itemStyle: { color: teamColor, borderColor: "#fff", borderWidth: 2 },
+          emphasis: { itemStyle: { color: "#fff", borderColor: teamColor, borderWidth: 2 } },
           z: 10,
           tooltip: {
             trigger: "item" as const,
