@@ -3,7 +3,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 COPY pyproject.toml .
-RUN pip install --no-cache-dir fastapi uvicorn[standard] sqlalchemy alembic pydantic pydantic-settings numpy scipy httpx aiosqlite python-dateutil
+RUN pip install --no-cache-dir fastapi uvicorn[standard] sqlalchemy alembic pydantic pydantic-settings numpy scipy httpx aiosqlite python-dateutil ddgs
 
 COPY app/ ./app/
 RUN mkdir -p /app/data

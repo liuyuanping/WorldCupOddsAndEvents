@@ -4,7 +4,7 @@ import logging
 import math
 import random
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Tuple
 
 from fastapi import APIRouter, Query, HTTPException
@@ -165,146 +165,58 @@ async def search_news(
     team_ids: str = Query(default="", description="Comma-separated team IDs"),
     limit: int = Query(default=10, le=30),
 ):
-    """Search news from GDELT API for selected teams."""
-    import httpx
-    from app.adapters.events.gdelt_adapter import TEAM_QUERIES as GDELT_QUERIES, SEVERITY_KEYWORDS, EVENT_TYPE_KEYWORDS
+    """Search news about teams using DuckDuckGo."""
+    from ddgs import DDGS
 
     tid_list = team_ids.split(",") if team_ids else []
     results = []
-
-    # Build GDELT query: simple English-only query
-    team_names = {}
-    team_query_parts = []
-    # English names for GDELT queries
     ENG_NAMES = {"france":"France","argentina":"Argentina","spain":"Spain","england":"England",
         "portugal":"Portugal","germany":"Germany","netherlands":"Netherlands","brazil":"Brazil",
-        "usa":"United States","norway":"Norway","japan":"Japan","morocco":"Morocco",
-        "colombia":"Colombia","mexico":"Mexico","belgium":"Belgium","switzerland":"Switzerland",
-        "croatia":"Croatia","canada":"Canada","ivory_coast":"Ivory Coast","south_korea":"South Korea",
-        "senegal":"Senegal","australia":"Australia","austria":"Austria","egypt":"Egypt",
-        "sweden":"Sweden","italy":"Italy","uruguay":"Uruguay","paraguay":"Paraguay",
-        "czechia":"Czechia","denmark":"Denmark","tunisia":"Tunisia","serbia":"Serbia"}
-    for tid in tid_list:
-        info = GDELT_QUERIES.get(tid)
-        if info:
-            eng_name = ENG_NAMES.get(tid, tid.capitalize())
-            team_query_parts.append(eng_name)
-            team_names[tid] = info["name"]
+        "usa":"USA","norway":"Norway","japan":"Japan","morocco":"Morocco","colombia":"Colombia",
+        "mexico":"Mexico","belgium":"Belgium","switzerland":"Switzerland","croatia":"Croatia",
+        "canada":"Canada","ivory_coast":"Ivory Coast","south_korea":"South Korea","senegal":"Senegal"}
 
-    if not team_query_parts:
-        return {"results": [], "total": 0, "source": "gdelt"}
+    # Build injury/doubt keywords
+    INJURY_KWS = ["injury","injured","hurt","doubt","knock","strain","骨折","受伤","伤"]
 
-    # Simple query: team names + World Cup
-    team_query = " OR ".join(team_query_parts[:3])  # limit to 3 teams per query
-    gdelt_query = f'({team_query}) World Cup football'
-    if query:
-        gdelt_query = f'({team_query}) World Cup {query}'
+    for tid in tid_list[:3]:  # Max 3 teams
+        eng = ENG_NAMES.get(tid, tid.capitalize())
+        search_query = f"{eng} 2026 World Cup football"
+        if query:
+            search_query = f"{eng} {query} 2026 World Cup"
 
-    logger.info(f"GDELT search: {gdelt_query[:200]}")
+        try:
+            with DDGS() as ddgs:
+                ddgs_results = list(ddgs.text(search_query, max_results=limit))
+        except Exception as e:
+            logger.warning(f"DuckDuckGo search failed for {tid}: {e}")
+            continue
 
-    try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            resp = await client.get(
-                "https://api.gdeltproject.org/api/v2/doc/doc",
-                params={
-                    "query": gdelt_query,
-                    "mode": "ArtList",
-                    "format": "json",
-                    "maxrecords": str(limit),
-                    "sort": "datedesc",
-                    "timespan": "90d",
-                },
-            )
-            if resp.status_code == 429:
-                # Fall back to database search
-                logger.info("GDELT rate limited, falling back to database search")
-                return await _search_database(tid_list, limit)
+        for r in ddgs_results[:limit]:
+            title = (r.get("title") or "").strip()
+            href = (r.get("href") or "").strip()
+            body = (r.get("body") or "")[:200]
+            if not title:
+                continue
 
-            resp.raise_for_status()
-            try:
-                data = resp.json()
-            except Exception:
-                return {"results": [], "total": 0, "source": "gdelt", "error": "parse_error"}
+            title_lower = title.lower()
+            evt_type = "injury" if any(k in title_lower for k in INJURY_KWS) else "other"
+            severity = 3 if any(k in title_lower for k in INJURY_KWS) else 2
 
-            articles = data.get("articles") or []
-            for article in articles[:limit]:
-                title = (article.get("title") or "").strip()
-                url = (article.get("url") or "").strip()
-                if not title:
-                    continue
+            team_name = ENG_NAMES.get(tid, tid.capitalize())
+            results.append(SearchResultItem(
+                title=title,
+                description=body,
+                source_url=href,
+                team_id=tid,
+                team_name=team_name,
+                event_type=evt_type,
+                severity=severity,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                confidence=0.6,
+            ))
 
-                seendate = article.get("seendate", "")
-                try:
-                    ts = datetime.strptime(seendate, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
-                except (ValueError, TypeError):
-                    ts = datetime.now(timezone.utc)
-
-                # Classify event type / severity by title keywords
-                title_lower = title.lower()
-                evt_type = "other"
-                for etype, kws in EVENT_TYPE_KEYWORDS.items():
-                    if any(kw in title_lower for kw in kws):
-                        evt_type = etype
-                        break
-                severity = 2
-                for sev, kws in SEVERITY_KEYWORDS.items():
-                    if any(kw in title_lower for kw in kws):
-                        severity = sev.value
-                        break
-
-                # Try to match article to a team
-                matched_tid = ""
-                matched_name = ""
-                for tid, info in GDELT_QUERIES.items():
-                    if info["name"] in title or tid.capitalize() in title:
-                        matched_tid = tid
-                        matched_name = info["name"]
-                        break
-
-                results.append(SearchResultItem(
-                    title=title[:200],
-                    description=url[:200],
-                    source_url=url,
-                    team_id=matched_tid,
-                    team_name=matched_name,
-                    event_type=evt_type,
-                    severity=severity,
-                    timestamp=ts.isoformat(),
-                    confidence=0.7,
-                ))
-
-    except Exception as e:
-        logger.warning(f"GDELT search failed: {e}")
-        return {"results": [], "total": 0, "source": "gdelt", "error": str(e)}
-
-    return {"results": results, "total": len(results), "source": "gdelt"}
-
-
-async def _search_database(tid_list: list, limit: int) -> dict:
-    """Fallback: search local database events."""
-    from sqlalchemy import select
-    from app.database import async_session
-    from app.models.champion import TeamEventORM
-
-    async with async_session() as session:
-        stmt = select(TeamEventORM).where(TeamEventORM.provider == "database")
-        if tid_list:
-            stmt = stmt.where(TeamEventORM.team_id.in_(tid_list))
-        stmt = stmt.order_by(TeamEventORM.timestamp.desc()).limit(limit)
-        rows = (await session.execute(stmt)).scalars().all()
-        results = [
-            SearchResultItem(
-                title=row.title,
-                description=(row.description or "")[:200],
-                team_id=row.team_id,
-                team_name=row.team_name,
-                event_type=row.event_type,
-                severity=row.severity,
-                timestamp=row.timestamp.isoformat(),
-                confidence=row.confidence,
-            ) for row in rows
-        ]
-    return {"results": results, "total": len(results), "source": "database"}
+    return {"results": results, "total": len(results), "source": "duckduckgo"}
 
 
 # ── Database Event CRUD ──────────────────────────────
