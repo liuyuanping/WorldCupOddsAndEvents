@@ -143,6 +143,61 @@ async def get_team_events(
     }
 
 
+# ── Information Search ──────────────────────────────
+
+class SearchResultItem(BaseModel):
+    title: str
+    description: str
+    source_url: str = ""
+    team_id: str = ""
+    team_name: str = ""
+    event_type: str = "other"
+    severity: int = 2
+    timestamp: str = ""
+    confidence: float = 0.7
+
+
+@router.get("/search")
+async def search_news(
+    query: str = Query(default="", description="Search keywords"),
+    team_ids: str = Query(default="", description="Comma-separated team IDs"),
+    limit: int = Query(default=10, le=30),
+):
+    """Search existing database events and optionally fresh GDELT news."""
+    from sqlalchemy import select, or_
+    from app.database import async_session
+    from app.models.champion import TeamEventORM
+
+    tid_list = team_ids.split(",") if team_ids else []
+    results = []
+
+    # Search database events first
+    async with async_session() as session:
+        stmt = select(TeamEventORM).where(TeamEventORM.provider == "database")
+        if tid_list:
+            stmt = stmt.where(TeamEventORM.team_id.in_(tid_list))
+        if query:
+            q = f"%{query}%"
+            stmt = stmt.where(
+                or_(TeamEventORM.title.ilike(q), TeamEventORM.description.ilike(q))
+            )
+        stmt = stmt.order_by(TeamEventORM.timestamp.desc()).limit(limit)
+        rows = (await session.execute(stmt)).scalars().all()
+        for row in rows:
+            results.append(SearchResultItem(
+                title=row.title,
+                description=(row.description or "")[:200],
+                team_id=row.team_id,
+                team_name=row.team_name,
+                event_type=row.event_type,
+                severity=row.severity,
+                timestamp=row.timestamp.isoformat(),
+                confidence=row.confidence,
+            ))
+
+    return {"results": results, "total": len(results), "source": "database"}
+
+
 # ── Database Event CRUD ──────────────────────────────
 
 class AddEventRequest(BaseModel):
