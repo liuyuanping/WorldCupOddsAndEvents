@@ -376,7 +376,7 @@ async def get_odds_trend(
     team_ids: str = Query(default="brazil,france,england,argentina"),
     bookmaker: str = Query(default="Pinnacle"),
     provider: str = Query(default="polymarket"),
-    interval: str = Query(default="1w", description="1h, 6h, 1d, 1w, 1m, all (CLOB retains ~30 days)"),
+    interval: str = Query(default="1m", description="1h, 6h, 1d, 1w, 1m, all (CLOB retains ~30 days)"),
 ):
     """Get odds trend data for selected teams (for line chart)."""
     tid_list = team_ids.split(",")

@@ -86,7 +86,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   predictionLoading: false,
 
   selectedBookmaker: "Pinnacle",
-  trendInterval: "1w",
+  trendInterval: "1m",
   eventDataProvider: "database",
   onlineMode: false,
   eventTimeRange: null,
