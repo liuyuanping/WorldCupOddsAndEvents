@@ -576,7 +576,6 @@ body {
 .search-panel {
   border-top: 1px solid var(--border);
   flex-shrink: 0;
-  min-height: 700px;
 }
 
 .search-header {
@@ -599,7 +598,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  max-height: 200px;
+  min-height: 500px;
+  max-height: 500px;
   overflow-y: auto;
   margin-bottom: 0.4rem;
 }
