@@ -268,7 +268,7 @@ export default function ChampionTrend() {
   };
 
   return (
-    <div className="panel trend-panel">
+    <div className="panel trend-panel" style={{ minHeight: chartHeight }}>
       <div className="trend-header">
         <h3>📈 胜率趋势</h3>
         <div className="trend-controls">
@@ -310,7 +310,7 @@ export default function ChampionTrend() {
       </div>
       <ReactECharts
         option={option}
-        style={{ height: chartHeight, width: "100%" }}
+        style={{ height: "100%", width: "100%" }}
         notMerge={true}
         onEvents={{
           dataZoom: (params: any) => {

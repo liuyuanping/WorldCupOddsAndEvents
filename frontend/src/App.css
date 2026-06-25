@@ -194,8 +194,18 @@ body {
   display: flex;
   flex-direction: column;
   resize: vertical;
-  overflow: hidden;
-  min-height: 400px;
+  overflow: auto;
+  position: relative;
+}
+.trend-panel::after {
+  content: "╱╲";
+  position: absolute;
+  bottom: 2px;
+  right: 4px;
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  pointer-events: none;
+  opacity: 0.5;
 }
 
 .trend-header {
