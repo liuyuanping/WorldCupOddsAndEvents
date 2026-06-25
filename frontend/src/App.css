@@ -190,12 +190,12 @@ body {
 /* ── Trend Panel ────────────────────── */
 
 .trend-panel {
-  flex: 1;
   display: flex;
   flex-direction: column;
   resize: vertical;
   overflow: auto;
   position: relative;
+  flex-shrink: 0;
 }
 .trend-panel::after {
   content: "╱╲";

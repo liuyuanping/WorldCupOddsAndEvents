@@ -268,7 +268,7 @@ export default function ChampionTrend() {
   };
 
   return (
-    <div className="panel trend-panel" style={{ minHeight: chartHeight }}>
+    <div className="panel trend-panel" style={{ height: chartHeight }}>
       <div className="trend-header">
         <h3>📈 胜率趋势</h3>
         <div className="trend-controls">
