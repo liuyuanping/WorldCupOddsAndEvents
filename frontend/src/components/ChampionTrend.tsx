@@ -1,5 +1,5 @@
 /* ── Probability Trend Line Chart ──────────────────────── */
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import ReactECharts from "echarts-for-react";
 import { useAppStore } from "../store/useAppStore";
 import { getTeamColor } from "../types";
@@ -119,6 +119,9 @@ export default function ChampionTrend() {
   const setHoveredTeam = useAppStore((s) => s.setHoveredTeam);
   const setEventTimeRange = useAppStore((s) => s.setEventTimeRange);
   const eventTimeRange = useAppStore((s) => s.eventTimeRange);
+
+  const [chartHeight, setChartHeight] = useState(720);
+  const HEIGHT_PRESETS = [400, 600, 720, 900];
 
   const teamIds = Object.keys(oddsTrends);
 
@@ -270,6 +273,17 @@ export default function ChampionTrend() {
         <h3>📈 胜率趋势</h3>
         <div className="trend-controls">
           <div className="interval-btns">
+            {HEIGHT_PRESETS.map((h) => (
+              <button
+                key={h}
+                className={`chip ${chartHeight === h ? "active" : ""}`}
+                onClick={() => setChartHeight(h)}
+                style={{ fontSize: "0.6rem", padding: "0.1rem 0.35rem" }}
+              >
+                {h}
+              </button>
+            ))}
+            <span style={{ color: "#475569", fontSize: "0.6rem", margin: "0 0.15rem" }}>|</span>
             {TIME_INTERVALS.map((ti) => (
               <button
                 key={ti.value}
@@ -296,7 +310,7 @@ export default function ChampionTrend() {
       </div>
       <ReactECharts
         option={option}
-        style={{ height: 720, width: "100%" }}
+        style={{ height: chartHeight, width: "100%" }}
         notMerge={true}
         onEvents={{
           dataZoom: (params: any) => {
