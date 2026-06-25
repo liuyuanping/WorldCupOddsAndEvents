@@ -128,6 +128,7 @@ async def get_team_events(
     return {
         "events": [
             {
+                "source_id": getattr(e, 'source_id', ''),
                 "team_id": e.team_id,
                 "team_name": e.team_name,
                 "event_type": e.event_type,
@@ -136,6 +137,7 @@ async def get_team_events(
                 "timestamp": e.timestamp.isoformat(),
                 "severity": e.severity.value,
                 "confidence": e.confidence,
+                "source_url": getattr(e, 'source_url', ''),
             }
             for e in events
         ],

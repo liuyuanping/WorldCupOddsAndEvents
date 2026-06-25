@@ -10,6 +10,7 @@ export default function ChampionEvents() {
   const setHoveredTeam = useAppStore((s) => s.setHoveredTeam);
   const selectedEvent = useAppStore((s) => s.selectedEvent);
   const setSelectedEvent = useAppStore((s) => s.setSelectedEvent);
+  const loadEvents = useAppStore((s) => s.loadEvents);
   const selectedEventTypes = useAppStore((s) => s.selectedEventTypes);
   const toggleEventType = useAppStore((s) => s.toggleEventType);
   const eventTimeRange = useAppStore((s) => s.eventTimeRange);
@@ -61,6 +62,17 @@ export default function ChampionEvents() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!displayEvent?.source_id) return;
+    try {
+      const r = await fetch(`/api/v1/champion/events/db/${displayEvent.source_id}`, { method: "DELETE" });
+      if (r.ok) {
+        setSelectedEvent(null);
+        loadEvents();
+      }
+    } catch {}
+  };
+
   return (
     <div className="panel events-panel">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
@@ -93,6 +105,15 @@ export default function ChampionEvents() {
               >
                 {SEVERITY_LABELS[displayEvent.severity]}
               </span>
+              {displayEvent.source_id && (
+                <button
+                  className="popup-delete"
+                  onClick={(e) => { e.stopPropagation(); handleDelete(); }}
+                  title="删除此事件"
+                >
+                  🗑️
+                </button>
+              )}
             </div>
             <h4
               onClick={handleTitleClick}

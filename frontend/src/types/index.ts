@@ -186,6 +186,7 @@ export interface ChampionOddsData {
 }
 
 export interface TeamEventData {
+  source_id?: string;
   team_id: string;
   team_name: string;
   event_type: string;
@@ -194,6 +195,7 @@ export interface TeamEventData {
   timestamp: string;
   severity: number;
   confidence: number;
+  source_url?: string;
 }
 
 export interface ChampionPredictionResult {
