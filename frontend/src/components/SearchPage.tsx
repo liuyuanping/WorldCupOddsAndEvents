@@ -1,5 +1,5 @@
 /* ── Information Search Page (Full Screen) ───────────── */
-import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import ReactECharts from "echarts-for-react";
 import { useAppStore } from "../store/useAppStore";
 import { getTeamColor } from "../types";
