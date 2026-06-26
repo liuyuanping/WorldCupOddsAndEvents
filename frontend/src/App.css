@@ -752,7 +752,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  flex-shrink: 0;
+  padding: 0.75rem;
+  background: var(--bg-card);
+  border-radius: 6px;
+  border: 1px solid var(--border);
 }
 
 .search-left-section {
