@@ -686,16 +686,6 @@ body {
   overflow: hidden;
 }
 
-.search-page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-  flex-shrink: 0;
-}
-
-.search-page-header h2 { margin: 0; }
-
 .search-btn-lg {
   font-size: 0.85rem !important;
   padding: 0.4rem 1rem !important;

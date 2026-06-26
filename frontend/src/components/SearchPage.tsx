@@ -125,9 +125,7 @@ export default function SearchPage() {
 
   return (
     <div className="search-page">
-      <div className="search-page-header">
-        <h2>🔍 信息检索</h2>
-      </div>
+      <h2 style={{ padding: "0.5rem 0", margin: 0 }}>🔍 信息检索</h2>
 
       {msg && <p className="search-msg">{msg}</p>}
 
