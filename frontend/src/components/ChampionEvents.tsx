@@ -125,7 +125,7 @@ export default function ChampionEvents() {
             <p className="popup-desc">{displayEvent.description || "暂无详细描述"}</p>
             <div className="popup-meta">
               <span>类型: {displayEvent.event_type}</span>
-              <span>来源: Mock Event Provider</span>
+              <span>来源: 离线数据库</span>
               <span>{new Date(displayEvent.timestamp).toLocaleString("zh-CN")}</span>
               {!displayEvent.source_url && (
                 <select
