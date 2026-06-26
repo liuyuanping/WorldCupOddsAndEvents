@@ -699,10 +699,10 @@ body {
 }
 
 .search-page-results {
-  width: 450px;
-  min-width: 250px;
+  width: 900px;
+  min-width: 300px;
   flex-shrink: 0;
-  max-width: 800px;
+  max-width: 1200px;
   resize: horizontal;
   overflow: auto;
   display: flex;
@@ -743,9 +743,9 @@ body {
 /* ── Search Page Left Panel ──────────── */
 
 .search-page-left {
-  width: 280px;
+  width: 500px;
   min-width: 200px;
-  max-width: 500px;
+  max-width: 700px;
   flex-shrink: 0;
   resize: horizontal;
   overflow: auto;
