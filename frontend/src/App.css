@@ -808,3 +808,14 @@ body {
   margin-bottom: 0.5rem;
   flex-shrink: 0;
 }
+
+.time-base-btns {
+  display: flex; gap: 0.2rem; margin-bottom: 0.3rem;
+}
+.time-inputs {
+  display: flex; align-items: center; gap: 0.3rem; margin-bottom: 0.3rem;
+}
+.time-input {
+  flex: 1; padding: 0.2rem; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 3px; font-size: 0.65rem;
+}

@@ -12,19 +12,24 @@ interface SearchResult {
 
 const SEVERITY_LABELS: Record<number, string> = { 1: "低", 2: "中", 3: "高", 4: "严重" };
 const EVENT_TYPES = ["injury","squad","form","transfer","manager","record","elimination","upset","comeback","suspension","other"];
-const TIME_INTERVALS = [
-  { label: "1h", value: "1h" }, { label: "6h", value: "6h" },
-  { label: "1d", value: "1d" }, { label: "1w", value: "1w" },
-  { label: "1m", value: "1m" }, { label: "Max", value: "all" },
-];
 
 export default function SearchPage() {
   const selectedTeamIds = useAppStore((s) => s.selectedTeamIds);
   const teams = useAppStore((s) => s.teams);
 
-  // Team & interval for the left panel
+  // Time range state
+  const DURATIONS = [
+    { label: "1h", sec: 3600 }, { label: "6h", sec: 21600 },
+    { label: "1d", sec: 86400 }, { label: "1w", sec: 604800 },
+    { label: "1m", sec: 2592000 },
+  ];
+  const now = new Date();
+  const defStart = new Date(now.getTime() - 2592000000).toISOString().slice(0, 16);
+  const defEnd = now.toISOString().slice(0, 16);
   const [searchTeam, setSearchTeam] = useState("");
-  const [searchInterval, setSearchInterval] = useState("1m");
+  const [timeBase, setTimeBase] = useState<"now" | "start">("now");
+  const [startTime, setStartTime] = useState(defStart);
+  const [endTime, setEndTime] = useState(defEnd);
   const [trendData, setTrendData] = useState<Array<{ timestamp: string; prob: number }>>([]);
   const [trendLoading, setTrendLoading] = useState(false);
 
@@ -35,16 +40,43 @@ export default function SearchPage() {
     }
   }, [selectedTeamIds]);
 
+  // Compute interval string from time range
+  const computedInterval = useMemo(() => {
+    const s = new Date(startTime).getTime();
+    const e = new Date(endTime).getTime();
+    const diffSec = (e - s) / 1000;
+    if (diffSec <= 0) return "1h";
+    if (diffSec <= 7200) return "1h";
+    if (diffSec <= 43200) return "6h";
+    if (diffSec <= 172800) return "1d";
+    if (diffSec <= 1209600) return "1w";
+    return "1m";
+  }, [startTime, endTime]);
+
+  // Handle duration quick buttons
+  const applyDuration = (sec: number) => {
+    const nowDt = new Date();
+    if (timeBase === "now") {
+      const s = new Date(nowDt.getTime() - sec * 1000);
+      setStartTime(s.toISOString().slice(0, 16));
+      setEndTime(nowDt.toISOString().slice(0, 16));
+    } else {
+      const s = new Date(startTime);
+      const e = new Date(s.getTime() + sec * 1000);
+      setEndTime(e.toISOString().slice(0, 16));
+    }
+  };
+
   // Fetch trend data for selected team
   useEffect(() => {
     if (!searchTeam) return;
     setTrendLoading(true);
-    fetch(`/api/v1/champion/trend?team_ids=${searchTeam}&interval=${searchInterval}&provider=polymarket`)
+    fetch(`/api/v1/champion/trend?team_ids=${searchTeam}&interval=${computedInterval}&provider=polymarket`)
       .then((r) => r.json())
       .then((d) => setTrendData(d.series?.[searchTeam]?.data || []))
       .catch(() => setTrendData([]))
       .finally(() => setTrendLoading(false));
-  }, [searchTeam, searchInterval]);
+  }, [searchTeam, computedInterval]);
 
   // Search results
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -143,13 +175,27 @@ export default function SearchPage() {
 
           <div className="search-left-section">
             <span className="edit-label">时间段</span>
+            <div className="time-base-btns">
+              <button className={`chip ${timeBase === "now" ? "active" : ""}`}
+                onClick={() => setTimeBase("now")} style={{ fontSize: "0.6rem" }}>从现在</button>
+              <button className={`chip ${timeBase === "start" ? "active" : ""}`}
+                onClick={() => setTimeBase("start")} style={{ fontSize: "0.6rem" }}>从开始时间</button>
+            </div>
+            <div className="time-inputs">
+              <input type="datetime-local" value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                className="time-input" />
+              <span style={{ color: "var(--text-muted)", fontSize: "0.6rem" }}>~</span>
+              <input type="datetime-local" value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
+                className="time-input" />
+            </div>
             <div className="interval-btns" style={{ flexWrap: "wrap" }}>
-              {TIME_INTERVALS.map((ti) => (
-                <button key={ti.value}
-                  className={`chip ${searchInterval === ti.value ? "active" : ""}`}
-                  onClick={() => setSearchInterval(ti.value)}
-                  style={{ fontSize: "0.65rem", padding: "0.1rem 0.4rem" }}>
-                  {ti.label}
+              {DURATIONS.map((d) => (
+                <button key={d.label} className="chip"
+                  onClick={() => applyDuration(d.sec)}
+                  style={{ fontSize: "0.6rem", padding: "0.1rem 0.35rem" }}>
+                  {timeBase === "now" ? `过去${d.label}` : `${d.label}后`}
                 </button>
               ))}
             </div>
