@@ -21,7 +21,7 @@ export default function SearchPage() {
   const DURATIONS = [
     { label: "1h", sec: 3600 }, { label: "6h", sec: 21600 },
     { label: "1d", sec: 86400 }, { label: "1w", sec: 604800 },
-    { label: "1m", sec: 2592000 },
+    { label: "1m", sec: 2592000 }, { label: "全部", sec: -1 },
   ];
   const now = new Date();
   const defStart = new Date(now.getTime() - 2592000000).toISOString().slice(0, 16);
@@ -50,11 +50,17 @@ export default function SearchPage() {
     if (diffSec <= 43200) return "6h";
     if (diffSec <= 172800) return "1d";
     if (diffSec <= 1209600) return "1w";
+    if (diffSec > 2592000) return "all";
     return "1m";
   }, [startTime, endTime]);
 
   // Handle duration quick buttons
   const applyDuration = (sec: number) => {
+    if (sec === -1) {
+      setStartTime("2025-07-01T00:00");
+      setEndTime(new Date().toISOString().slice(0, 16));
+      return;
+    }
     const nowDt = new Date();
     if (timeBase === "now") {
       const s = new Date(nowDt.getTime() - sec * 1000);
@@ -195,7 +201,7 @@ export default function SearchPage() {
                 <button key={d.label} className="chip"
                   onClick={() => applyDuration(d.sec)}
                   style={{ fontSize: "0.6rem", padding: "0.1rem 0.35rem" }}>
-                  {timeBase === "now" ? `过去${d.label}` : `${d.label}后`}
+                  {d.sec === -1 ? "全部" : timeBase === "now" ? `过去${d.label}` : `${d.label}后`}
                 </button>
               ))}
             </div>
