@@ -1,5 +1,5 @@
 /* ── Information Search Page (Full Screen) ───────────── */
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import ReactECharts from "echarts-for-react";
 import { useAppStore } from "../store/useAppStore";
 import { getTeamColor } from "../types";
@@ -156,6 +156,9 @@ export default function SearchPage() {
       const d = new Date(v); return `${d.getMonth() + 1}/${d.getDate()}`;
     }}},
     yAxis: { type: "value" as const, name: "%", axisLabel: { fontSize: 10, formatter: "{value}" } },
+    dataZoom: [
+      { type: "inside", start: 0, end: 100 },
+    ],
     series: [{
       type: "line" as const, name: "胜率", smooth: true, symbol: "none" as const, color: teamColor,
       data: (trendData || []).map((d) => [new Date(d.timestamp).getTime(), (d.prob ?? 0) * 100]),
@@ -188,11 +191,11 @@ export default function SearchPage() {
                 onClick={() => setTimeBase("start")} style={{ fontSize: "0.6rem" }}>从开始时间</button>
             </div>
             <div className="time-inputs">
-              <input type="datetime-local" value={startTime}
+              <input id="sp-start" type="datetime-local" value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
                 className="time-input" />
               <span style={{ color: "var(--text-muted)", fontSize: "0.6rem" }}>~</span>
-              <input type="datetime-local" value={endTime}
+              <input id="sp-end" type="datetime-local" value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
                 className="time-input" />
             </div>
@@ -218,7 +221,20 @@ export default function SearchPage() {
               {trendLoading ? (
                 <p className="search-msg">加载中...</p>
               ) : trendData.length > 0 ? (
-                <ReactECharts option={trendOption} style={{ height: "100%", width: "100%" }} notMerge={true} />
+                <ReactECharts
+                  option={trendOption}
+                  style={{ height: "100%", width: "100%" }}
+                  notMerge={true}
+                  onEvents={{
+                    dataZoom: (params: any) => {
+                      const batch = params.batch?.[0] || params;
+                      if (batch.startValue != null && batch.endValue != null) {
+                        setStartTime(new Date(batch.startValue).toISOString().slice(0, 16));
+                        setEndTime(new Date(batch.endValue).toISOString().slice(0, 16));
+                      }
+                    },
+                  }}
+                />
               ) : (
                 <p className="search-msg" style={{ paddingTop: "3rem" }}>暂无数据</p>
               )}
