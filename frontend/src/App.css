@@ -740,3 +740,30 @@ body {
   white-space: nowrap;
   margin-top: 0.1rem;
 }
+
+/* ── Search Page Left Panel ──────────── */
+
+.search-page-header-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.search-page-left {
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.search-left-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.search-left-section .edit-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}

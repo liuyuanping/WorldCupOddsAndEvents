@@ -1,5 +1,6 @@
 /* ── Information Search Page (Full Screen) ───────────── */
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
+import ReactECharts from "echarts-for-react";
 import { useAppStore } from "../store/useAppStore";
 import { getTeamColor } from "../types";
 
@@ -11,11 +12,41 @@ interface SearchResult {
 
 const SEVERITY_LABELS: Record<number, string> = { 1: "低", 2: "中", 3: "高", 4: "严重" };
 const EVENT_TYPES = ["injury","squad","form","transfer","manager","record","elimination","upset","comeback","suspension","other"];
+const TIME_INTERVALS = [
+  { label: "1h", value: "1h" }, { label: "6h", value: "6h" },
+  { label: "1d", value: "1d" }, { label: "1w", value: "1w" },
+  { label: "1m", value: "1m" }, { label: "Max", value: "all" },
+];
 
 export default function SearchPage() {
   const selectedTeamIds = useAppStore((s) => s.selectedTeamIds);
   const teams = useAppStore((s) => s.teams);
 
+  // Team & interval for the left panel
+  const [searchTeam, setSearchTeam] = useState("");
+  const [searchInterval, setSearchInterval] = useState("1m");
+  const [trendData, setTrendData] = useState<Array<{ timestamp: string; prob: number }>>([]);
+  const [trendLoading, setTrendLoading] = useState(false);
+
+  // Default team = first selected on dashboard
+  useEffect(() => {
+    if (!searchTeam && selectedTeamIds.size > 0) {
+      setSearchTeam([...selectedTeamIds][0]);
+    }
+  }, [selectedTeamIds]);
+
+  // Fetch trend data for selected team
+  useEffect(() => {
+    if (!searchTeam) return;
+    setTrendLoading(true);
+    fetch(`/api/v1/champion/trend?team_ids=${searchTeam}&interval=${searchInterval}&provider=polymarket`)
+      .then((r) => r.json())
+      .then((d) => setTrendData(d.series?.[searchTeam]?.data || []))
+      .catch(() => setTrendData([]))
+      .finally(() => setTrendLoading(false));
+  }, [searchTeam, searchInterval]);
+
+  // Search results
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<SearchResult | null>(null);
@@ -73,19 +104,81 @@ export default function SearchPage() {
     setAdding(false);
   };
 
+  // Trend chart option
+  const teamColor = getTeamColor(searchTeam);
+  const trendOption = useMemo(() => ({
+    tooltip: { trigger: "axis" as const, formatter: (params: any) => {
+      if (!Array.isArray(params)) return "";
+      const d = params[0]?.value;
+      return `<b>${new Date(d[0]).toLocaleString("zh-CN")}</b><br/>胜率: <b>${d[1].toFixed(1)}%</b>`;
+    }},
+    grid: { top: 30, right: 10, bottom: 25, left: 45 },
+    xAxis: { type: "time" as const, axisLabel: { fontSize: 10, formatter: (v: number) => {
+      const d = new Date(v); return `${d.getMonth() + 1}/${d.getDate()}`;
+    }}},
+    yAxis: { type: "value" as const, name: "%", axisLabel: { fontSize: 10, formatter: "{value}" } },
+    series: [{
+      type: "line" as const, name: "胜率", smooth: true, symbol: "none" as const, color: teamColor,
+      data: (trendData || []).map((d) => [new Date(d.timestamp).getTime(), (d.prob ?? 0) * 100]),
+    }],
+  }), [trendData, teamColor]);
+
   return (
     <div className="search-page">
       <div className="search-page-header">
-        <h2>🔍 信息检索</h2>
-        <button className="action-btn search-btn-lg" onClick={doSearch} disabled={loading}>
-          {loading ? "搜索中..." : `🌐 搜索 ${selectedTeamIds.size} 支球队`}
-        </button>
+        <div className="search-page-header-left">
+          <h2>🔍 信息检索</h2>
+          <button className="action-btn search-btn-lg" onClick={doSearch} disabled={loading}>
+            {loading ? "搜索中..." : `🌐 搜索 ${selectedTeamIds.size} 支球队`}
+          </button>
+        </div>
       </div>
 
       {msg && <p className="search-msg">{msg}</p>}
 
       <div className="search-page-body">
-        {/* Results */}
+        {/* Left: Team selector + Trend chart */}
+        <div className="search-page-left">
+          <div className="search-left-section">
+            <span className="edit-label">选择球队</span>
+            <select value={searchTeam} onChange={(e) => setSearchTeam(e.target.value)}
+              style={{ width: "100%", padding: "0.3rem", background: "var(--bg)", color: "var(--text)",
+                border: "1px solid var(--border)", borderRadius: "4px", fontSize: "0.8rem" }}>
+              {teams.sort((a, b) => b.implied_probability - a.implied_probability).map((t) => (
+                <option key={t.team_id} value={t.team_id}>{t.flag_emoji} {t.team_name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="search-left-section">
+            <span className="edit-label">时间段</span>
+            <div className="interval-btns" style={{ flexWrap: "wrap" }}>
+              {TIME_INTERVALS.map((ti) => (
+                <button key={ti.value}
+                  className={`chip ${searchInterval === ti.value ? "active" : ""}`}
+                  onClick={() => setSearchInterval(ti.value)}
+                  style={{ fontSize: "0.65rem", padding: "0.1rem 0.4rem" }}>
+                  {ti.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="search-left-section" style={{ flex: 1, minHeight: 0 }}>
+            <span className="edit-label">胜率趋势</span>
+            <div style={{ height: "100%", minHeight: 200 }}>
+              {trendLoading ? (
+                <p className="search-msg">加载中...</p>
+              ) : trendData.length > 0 ? (
+                <ReactECharts option={trendOption} style={{ height: "100%", width: "100%" }} notMerge={true} />
+              ) : (
+                <p className="search-msg" style={{ paddingTop: "3rem" }}>暂无数据</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Center: Results */}
         <div className="search-page-results">
           {results.map((r, i) => (
             <div key={i} className={`search-item ${selected === r ? "selected" : ""}`} onClick={() => selectResult(r)}>
@@ -99,7 +192,7 @@ export default function SearchPage() {
           ))}
         </div>
 
-        {/* Edit form */}
+        {/* Right: Edit form */}
         <div className="search-page-edit">
           {selected ? (
             <>
@@ -113,14 +206,10 @@ export default function SearchPage() {
                   {teamNames.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                 </select>
               </div>
-              <div className="edit-row">
-                <span className="edit-label">标题 *</span>
-                <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} />
-              </div>
-              <div className="edit-row">
-                <span className="edit-label">描述</span>
-                <textarea value={editDesc} onChange={(e) => setEditDesc(e.target.value)} rows={4} />
-              </div>
+              <div className="edit-row"><span className="edit-label">标题 *</span>
+                <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} /></div>
+              <div className="edit-row"><span className="edit-label">描述</span>
+                <textarea value={editDesc} onChange={(e) => setEditDesc(e.target.value)} rows={4} /></div>
               <div className="edit-row-inline">
                 <div><span className="edit-label">类型</span>
                   <select value={editType} onChange={(e) => setEditType(e.target.value)}>
@@ -136,16 +225,12 @@ export default function SearchPage() {
                     style={{ width: "70px", padding: "0.2rem", background: "var(--bg)", color: "var(--text)",
                       border: "1px solid var(--border)", borderRadius: "3px", fontSize: "0.7rem" }} /></div>
               </div>
-              <div className="edit-row">
-                <span className="edit-label">时间</span>
+              <div className="edit-row"><span className="edit-label">时间</span>
                 <input type="datetime-local" value={editTs} onChange={(e) => setEditTs(e.target.value)}
                   style={{ padding: "0.25rem", background: "var(--bg)", color: "var(--text)",
-                    border: "1px solid var(--border)", borderRadius: "3px", fontSize: "0.75rem" }} />
-              </div>
-              <div className="edit-row">
-                <span className="edit-label">来源链接</span>
-                <input value={editSourceUrl} onChange={(e) => setEditSourceUrl(e.target.value)} placeholder="https://..." />
-              </div>
+                    border: "1px solid var(--border)", borderRadius: "3px", fontSize: "0.75rem" }} /></div>
+              <div className="edit-row"><span className="edit-label">来源链接</span>
+                <input value={editSourceUrl} onChange={(e) => setEditSourceUrl(e.target.value)} placeholder="https://..." /></div>
               <button className="action-btn add-btn" onClick={addToDatabase} disabled={adding}>
                 {adding ? "添加中..." : "➕ 添加到离线数据库"}
               </button>
