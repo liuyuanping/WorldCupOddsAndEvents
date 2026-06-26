@@ -130,6 +130,7 @@ async def get_team_events(
         "events": [
             {
                 "source_id": getattr(e, 'source_id', ''),
+                "provider": getattr(e, 'provider', ''),
                 "team_id": e.team_id,
                 "team_name": e.team_name,
                 "event_type": e.event_type,

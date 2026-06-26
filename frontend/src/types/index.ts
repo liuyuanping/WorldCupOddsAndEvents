@@ -187,6 +187,7 @@ export interface ChampionOddsData {
 
 export interface TeamEventData {
   source_id?: string;
+  provider?: string;
   team_id: string;
   team_name: string;
   event_type: string;
