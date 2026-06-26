@@ -129,6 +129,7 @@ export default function SearchPage() {
       <div className="search-page-body">
         {/* Left: Team selector + Trend chart + execute button */}
         <div className="search-page-left">
+          <div className="search-section-title">球队与趋势</div>
           <div className="search-left-section">
             <span className="edit-label">选择球队</span>
             <select value={searchTeam} onChange={(e) => setSearchTeam(e.target.value)}
@@ -175,6 +176,7 @@ export default function SearchPage() {
 
         {/* Center: Results */}
         <div className="search-page-results">
+          <div className="search-section-title">搜索结果</div>
           {results.map((r, i) => (
             <div key={i} className={`search-item ${selected === r ? "selected" : ""}`} onClick={() => selectResult(r)}>
               <div className="search-item-header">
@@ -189,6 +191,7 @@ export default function SearchPage() {
 
         {/* Right: Edit form */}
         <div className="search-page-edit">
+          <div className="search-section-title">编辑入库</div>
           {selected ? (
             <>
               <h4>编辑后添加到数据库</h4>
