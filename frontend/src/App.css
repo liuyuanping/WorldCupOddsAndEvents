@@ -743,12 +743,6 @@ body {
 
 /* ── Search Page Left Panel ──────────── */
 
-.search-page-header-left {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
 .search-page-left {
   width: 280px;
   display: flex;

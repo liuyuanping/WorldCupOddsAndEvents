@@ -126,18 +126,13 @@ export default function SearchPage() {
   return (
     <div className="search-page">
       <div className="search-page-header">
-        <div className="search-page-header-left">
-          <h2>🔍 信息检索</h2>
-          <button className="action-btn search-btn-lg" onClick={doSearch} disabled={loading}>
-            {loading ? "搜索中..." : `▶ 执行搜索`}
-          </button>
-        </div>
+        <h2>🔍 信息检索</h2>
       </div>
 
       {msg && <p className="search-msg">{msg}</p>}
 
       <div className="search-page-body">
-        {/* Left: Team selector + Trend chart */}
+        {/* Left: Team selector + Trend chart + execute button */}
         <div className="search-page-left">
           <div className="search-left-section">
             <span className="edit-label">选择球队</span>
@@ -163,6 +158,11 @@ export default function SearchPage() {
               ))}
             </div>
           </div>
+
+          <button className="action-btn search-btn-lg" onClick={doSearch} disabled={loading}
+            style={{ width: "100%", margin: "0.5rem 0" }}>
+            {loading ? "搜索中..." : "▶ 执行搜索"}
+          </button>
 
           <div className="search-left-section" style={{ flex: 1, minHeight: 0 }}>
             <span className="edit-label">胜率趋势</span>
