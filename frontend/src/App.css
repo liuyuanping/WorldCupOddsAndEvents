@@ -197,16 +197,6 @@ body {
   position: relative;
   flex-shrink: 0;
 }
-.trend-panel::after {
-  content: "╱╲";
-  position: absolute;
-  bottom: 2px;
-  right: 4px;
-  font-size: 0.6rem;
-  color: var(--text-muted);
-  pointer-events: none;
-  opacity: 0.5;
-}
 
 .trend-header {
   display: flex;
