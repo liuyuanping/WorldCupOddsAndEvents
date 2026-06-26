@@ -111,6 +111,7 @@ export default function SearchPage() {
   const [editTs, setEditTs] = useState("");
   const [editConfidence, setEditConfidence] = useState(0.85);
   const [editSourceUrl, setEditSourceUrl] = useState("");
+  const [editProvider, setEditProvider] = useState("数据库");
   const [adding, setAdding] = useState(false);
 
   const showToast = useAppStore((s) => s.showToast);
@@ -136,6 +137,7 @@ export default function SearchPage() {
     setEditType(r.event_type); setEditSeverity(r.severity);
     setEditTs(r.timestamp ? r.timestamp.slice(0, 19) : new Date().toISOString().slice(0, 19));
     setEditConfidence(r.confidence); setEditSourceUrl(r.source_url || "");
+    setEditProvider((r as any).ai_model ? `AI 分析 (${(r as any).ai_model})` : "数据库");
   };
 
   const addToDatabase = async () => {
@@ -149,6 +151,7 @@ export default function SearchPage() {
           event_type: editType, title: editTitle, description: editDesc,
           timestamp: editTs + ":00Z", severity: editSeverity,
           confidence: editConfidence, source_url: editSourceUrl,
+          provider: editProvider,
         }),
       });
       if (r.ok) { showToast("✅ 已添加到离线数据库"); useAppStore.getState().loadEvents(); }
@@ -412,6 +415,8 @@ export default function SearchPage() {
                     border: "1px solid var(--border)", borderRadius: "3px", fontSize: "0.75rem" }} /></div>
               <div className="edit-row"><span className="edit-label">来源链接</span>
                 <input value={editSourceUrl} onChange={(e) => setEditSourceUrl(e.target.value)} placeholder="https://..." /></div>
+              <div className="edit-row"><span className="edit-label">提供者</span>
+                <input value={editProvider} onChange={(e) => setEditProvider(e.target.value)} /></div>
               <button className="action-btn add-btn" onClick={addToDatabase} disabled={adding}>
                 {adding ? "添加中..." : "➕ 添加到离线数据库"}
               </button>

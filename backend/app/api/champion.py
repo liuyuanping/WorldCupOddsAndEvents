@@ -233,6 +233,7 @@ class AddEventRequest(BaseModel):
     severity: int = 1  # 1-4
     confidence: float = 1.0
     source_url: str = ""
+    provider: str = "数据库"
 
 
 @router.post("/events/db")
@@ -245,7 +246,7 @@ async def add_database_event(req: AddEventRequest):
         raise HTTPException(status_code=503, detail="Database event adapter not available")
 
     event = TeamEventIn(
-        provider="database",
+        provider=req.provider,
         source_id="",
         team_id=req.team_id,
         team_name=req.team_name,
