@@ -799,4 +799,4 @@ body {
   margin-bottom: 0.5rem;
 }
 .ranking-header h3 { margin: 0; }
-.ranking-btns { display: flex; gap: 0.2rem; }
+.ranking-btns { display: flex; gap: 0.2rem; justify-content: center; }
