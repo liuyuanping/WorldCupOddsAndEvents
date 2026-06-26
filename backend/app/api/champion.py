@@ -418,7 +418,7 @@ async def ai_analyze(req: AIAnalyzeRequest):
         "event_type": evt_type,
         "severity": severity,
         "confidence": 0.85,
-        "source_url": "",
+        "source_url": f"ai:{llm_model}",
         "timestamp": event_ts.isoformat(),
     }
 
