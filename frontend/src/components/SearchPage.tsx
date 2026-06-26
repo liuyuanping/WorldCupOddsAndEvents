@@ -129,7 +129,7 @@ export default function SearchPage() {
         <div className="search-page-header-left">
           <h2>🔍 信息检索</h2>
           <button className="action-btn search-btn-lg" onClick={doSearch} disabled={loading}>
-            {loading ? "搜索中..." : `🌐 搜索 ${selectedTeamIds.size} 支球队`}
+            {loading ? "搜索中..." : `🔍 信息检索`}
           </button>
         </div>
       </div>
