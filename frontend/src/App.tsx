@@ -5,6 +5,7 @@ import ChampionTrend from "./components/ChampionTrend";
 import ChampionEvents from "./components/ChampionEvents";
 import TeamSelector from "./components/TeamSelector";
 import SearchPage from "./components/SearchPage";
+import Toast from "./components/Toast";
 import "./App.css";
 
 export default function App() {
@@ -59,6 +60,7 @@ export default function App() {
       ) : (
         <SearchPage />
       )}
+      <Toast />
     </div>
   );
 }

@@ -60,19 +60,20 @@ export default function SearchPage() {
   const [editConfidence, setEditConfidence] = useState(0.85);
   const [editSourceUrl, setEditSourceUrl] = useState("");
   const [adding, setAdding] = useState(false);
-  const [msg, setMsg] = useState("");
+
+  const showToast = useAppStore((s) => s.showToast);
 
   const teamNames = teams.map((t) => ({ id: t.team_id, name: t.team_name }));
 
   const doSearch = useCallback(async () => {
     if (selectedTeamIds.size === 0) return;
-    setLoading(true); setResults([]); setSelected(null); setMsg("");
+    setLoading(true); setResults([]); setSelected(null);
     try {
       const r = await fetch(`/api/v1/champion/search?team_ids=${[...selectedTeamIds].join(",")}&limit=15`);
       const data = await r.json();
       setResults(data.results || []);
-      if (data.results?.length === 0) setMsg("未找到相关信息");
-    } catch { setMsg("搜索失败"); }
+      if (data.results?.length === 0) showToast("未找到相关信息");
+    } catch { showToast("搜索失败"); }
     setLoading(false);
   }, [selectedTeamIds]);
 
@@ -87,7 +88,7 @@ export default function SearchPage() {
 
   const addToDatabase = async () => {
     if (!selected) return;
-    setAdding(true); setMsg("");
+    setAdding(true);
     try {
       const r = await fetch("/api/v1/champion/events/db", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -98,9 +99,9 @@ export default function SearchPage() {
           confidence: editConfidence, source_url: editSourceUrl,
         }),
       });
-      if (r.ok) { setMsg("✅ 已添加到离线数据库"); useAppStore.getState().loadEvents(); }
-      else { setMsg("❌ 添加失败"); }
-    } catch { setMsg("❌ 添加失败"); }
+      if (r.ok) { showToast("✅ 已添加到离线数据库"); useAppStore.getState().loadEvents(); }
+      else { showToast("❌ 添加失败"); }
+    } catch { showToast("❌ 添加失败"); }
     setAdding(false);
   };
 
@@ -125,8 +126,6 @@ export default function SearchPage() {
 
   return (
     <div className="search-page">
-      {msg && <p className="search-msg">{msg}</p>}
-
       <div className="search-page-body">
         {/* Left: Team selector + Trend chart + execute button */}
         <div className="search-page-left">

@@ -58,6 +58,8 @@ interface AppState {
   setEventDataProvider: (p: string) => void;
   toggleOnlineMode: () => void;
   toggleSelectMode: () => void;
+  toastMsg: string | null;
+  showToast: (msg: string) => void;
   setHoveredTeam: (tid: string | null) => void;
   setSelectedEvent: (evt: TeamEventData | null) => void;
   toggleEventType: (t: string) => void;
@@ -91,6 +93,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   onlineMode: false,
   eventTimeRange: null,
   singleSelectMode: false,
+  toastMsg: null,
   dataProvider: "polymarket",
 
   loadTeams: async () => {
@@ -230,6 +233,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setEventTimeRange: (r) => {
     set({ eventTimeRange: r });
+  },
+
+  showToast: (msg) => {
+    set({ toastMsg: msg });
+    setTimeout(() => {
+      set({ toastMsg: null });
+    }, 2800);
   },
 
   setEventDataProvider: (p: string) => {
