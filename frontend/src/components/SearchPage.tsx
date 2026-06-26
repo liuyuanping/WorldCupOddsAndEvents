@@ -222,6 +222,25 @@ export default function SearchPage() {
                 </button>
               ))}
             </div>
+            <button className="chip" onClick={() => {
+              zoomLockRef.current = false;
+              prevTeamRef.current = "";
+              setTrendLoading(true);
+              fetch(`/api/v1/champion/trend?team_ids=${searchTeam}&interval=${computedInterval}&provider=polymarket`)
+                .then((r) => r.json())
+                .then((d) => {
+                  const pts = d.series?.[searchTeam]?.data || [];
+                  setTrendData(pts);
+                  if (pts.length > 1) {
+                    setStartTime(pts[0].timestamp.slice(0, 16));
+                    setEndTime(pts[pts.length - 1].timestamp.slice(0, 16));
+                  }
+                })
+                .catch(() => setTrendData([]))
+                .finally(() => setTrendLoading(false));
+            }} style={{ fontSize: "0.6rem", marginTop: "0.25rem", width: "100%" }}>
+              {trendLoading ? "加载中..." : "🔄 刷新图表"}
+            </button>
           </div>
 
           <button className="action-btn search-btn-lg" onClick={doSearch} disabled={loading}
