@@ -794,8 +794,8 @@ body {
 
 .ranking-header {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 0.35rem;
   margin-bottom: 0.5rem;
 }
 .ranking-header h3 { margin: 0; }
