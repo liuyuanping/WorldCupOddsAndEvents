@@ -272,6 +272,109 @@ async def delete_database_event(source_id: str):
     return {"status": "ok"}
 
 
+class AIAnalyzeRequest(BaseModel):
+    team_id: str
+    team_name: str
+    start_time: str = ""
+    end_time: str = ""
+    trend_data: list = []
+    search_results: list = []
+
+    class Config:
+        extra = "allow"
+
+
+@router.post("/ai-analyze")
+async def ai_analyze(req: AIAnalyzeRequest):
+    """AI analysis: determine trend direction, causes, and generate event."""
+    trend_data = req.trend_data or []
+    search_results = req.search_results or []
+
+    # Analyze trend direction
+    trend_direction = "stable"
+    change_pct = 0.0
+    if len(trend_data) >= 2:
+        first_prob = trend_data[0].get("prob", 0) if isinstance(trend_data[0], dict) else 0
+        last_prob = trend_data[-1].get("prob", 0) if isinstance(trend_data[-1], dict) else 0
+        if isinstance(trend_data[0], dict) and isinstance(trend_data[-1], dict):
+            first_prob = trend_data[0].get("prob", 0) or 0
+            last_prob = trend_data[-1].get("prob", 0) or 0
+            if first_prob > 0:
+                change_pct = (last_prob - first_prob) / first_prob * 100
+                if change_pct > 3:
+                    trend_direction = "up"
+                elif change_pct < -3:
+                    trend_direction = "down"
+                else:
+                    trend_direction = "stable"
+
+    # Analyze search results for keywords
+    injury_kws = ["injury", "injured", "hurt", "doubt", "伤", "受伤", "骨折"]
+    good_kws = ["win", "goal", "score", "form", "brilliant", "strong", "胜", "进球", "状态出色"]
+    bad_kws = ["loss", "lose", "defeat", "red card", "suspen", "输", "败", "红牌", "停赛"]
+
+    has_injury = False
+    has_good = False
+    has_bad = False
+    titles = []
+    for r in search_results:
+        title = r.get("title", "") if isinstance(r, dict) else ""
+        lower = title.lower()
+        if any(k in lower for k in injury_kws):
+            has_injury = True
+        if any(k in lower for k in good_kws):
+            has_good = True
+        if any(k in lower for k in bad_kws):
+            has_bad = True
+        if title:
+            titles.append(title[:80])
+
+    # Build analysis text
+    direction_text = {"up": "上升", "down": "下降", "stable": "平稳"}[trend_direction]
+    reasons = []
+    if has_injury:
+        reasons.append("出现伤病相关新闻")
+    if has_good:
+        reasons.append("有积极消息")
+    if has_bad:
+        reasons.append("有负面消息")
+    if abs(change_pct) < 3:
+        reasons.append("赔率变动幅度较小")
+
+    description = f"AI分析：{req.team_name}近期夺冠概率呈{direction_text}趋势"
+    if abs(change_pct) >= 1:
+        description += f"（变动{change_pct:+.1f}%）"
+    if reasons:
+        description += f"。可能原因：{'、'.join(reasons)}。"
+    if titles:
+        description += f"\n相关新闻：{'、'.join(titles[:3])}"
+
+    title = f"{req.team_name}夺冠概率{trend_direction == 'up' and '上升' or trend_direction == 'down' and '下降' or '平稳'}"
+
+    # Determine event type and severity
+    if has_injury:
+        evt_type = "injury"
+        severity = 3
+    elif has_bad:
+        evt_type = "other"
+        severity = 3
+    elif has_good:
+        evt_type = "form"
+        severity = 2
+    else:
+        evt_type = "other"
+        severity = 2
+
+    return {
+        "title": title,
+        "description": description,
+        "event_type": evt_type,
+        "severity": severity,
+        "confidence": 0.7,
+        "source_url": "",
+    }
+
+
 # ── Monte Carlo Champion Prediction ───────────────────
 
 @router.get("/predict", response_model=ChampionPredictionResponse)

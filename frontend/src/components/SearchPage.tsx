@@ -293,6 +293,46 @@ export default function SearchPage() {
             <span>时间: <b>{startTime.slice(0, 10)} ~ {endTime.slice(0, 10)}</b></span>
             <span>{results.length > 0 ? `找到 ${results.length} 条` : ""}</span>
           </div>
+
+          <div className="search-ai-area">
+            <button className="chip" style={{ fontSize: "0.65rem", width: "100%", marginBottom: "0.3rem" }}
+              onClick={async () => {
+                if (!searchTeam) { showToast("请先选择球队"); return; }
+                const teamName = teams.find(t => t.team_id === searchTeam)?.team_name || searchTeam;
+                try {
+                  const r = await fetch("/api/v1/champion/ai-analyze", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      team_id: searchTeam,
+                      team_name: teamName,
+                      start_time: startTime,
+                      end_time: endTime,
+                      trend_data: trendData,
+                      search_results: results,
+                    }),
+                  });
+                  const data = await r.json();
+                  if (data.title) {
+                    selectResult({
+                      title: data.title,
+                      description: data.description || "",
+                      source_url: data.source_url || "",
+                      team_id: searchTeam,
+                      team_name: teamName,
+                      event_type: data.event_type || "other",
+                      severity: data.severity || 2,
+                      timestamp: new Date().toISOString(),
+                      confidence: data.confidence || 0.7,
+                    });
+                    showToast("AI 分析完成，请审查下方结果");
+                  }
+                } catch { showToast("AI 分析失败"); }
+              }}>
+              🤖 AI 分析趋势
+            </button>
+          </div>
+
           {results.map((r, i) => (
             <div key={i} className={`search-item ${selected === r ? "selected" : ""}`} onClick={() => selectResult(r)}>
               <div className="search-item-header">
@@ -310,6 +350,30 @@ export default function SearchPage() {
           <div className="search-section-title">编辑入库</div>
           {selected ? (
             <>
+              <div className="edit-ai-btns">
+                <button className="chip" style={{ fontSize: "0.6rem" }}
+                  onClick={async () => {
+                    const teamName = teams.find(t => t.team_id === editTeamId)?.team_name || editTeamId;
+                    try {
+                      const r = await fetch("/api/v1/champion/ai-analyze", {
+                        method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          team_id: editTeamId, team_name: teamName,
+                          start_time: startTime, end_time: endTime,
+                          trend_data: trendData, search_results: results,
+                        }),
+                      });
+                      const data = await r.json();
+                      if (data.title) {
+                        setEditTitle(data.title);
+                        setEditDesc(data.description || "");
+                        setEditType(data.event_type || "other");
+                        setEditSeverity(data.severity || 2);
+                        showToast("AI 已重新生成，请审查");
+                      }
+                    } catch { showToast("AI 分析失败"); }
+                  }}>🤖 你再想想</button>
+              </div>
               <h4>编辑后添加到数据库</h4>
               <div className="edit-row">
                 <span className="edit-label">球队</span>
