@@ -1,7 +1,10 @@
-/* ── Team Ranking Bar Chart (All Teams) ───────────────── */
+/* ── Team Ranking Bar Chart ───────────────────────────── */
+import { useState } from "react";
 import ReactECharts from "echarts-for-react";
 import { useAppStore } from "../store/useAppStore";
 import { getTeamColor } from "../types";
+
+const DISPLAY_OPTIONS = [10, 20, 30, 44];
 
 export default function ChampionRanking() {
   const teams = useAppStore((s) => s.teams);
@@ -10,6 +13,7 @@ export default function ChampionRanking() {
   const hoveredTeamId = useAppStore((s) => s.hoveredTeamId);
   const setHoveredTeam = useAppStore((s) => s.setHoveredTeam);
   const toggleTeam = useAppStore((s) => s.toggleTeam);
+  const [displayCount, setDisplayCount] = useState(30);
 
   if (teams.length === 0) {
     return <div className="panel loading">加载球队数据中...</div>;
@@ -28,12 +32,12 @@ export default function ChampionRanking() {
     })
     .sort((a, b) => b.simProb - a.simProb);
 
-  const allTeams = rankData;  // Show every team
+  const allTeams = rankData.slice(0, displayCount);
   const isSelected = (tid: string) => selectedTeamIds.has(tid);
   const isHovered = (tid: string) => hoveredTeamId === tid;
 
   // Dynamic height: 28px per team
-  const chartHeight = Math.max(allTeams.length * 28, 400);
+  const chartHeight = Math.max(allTeams.length * 28, 300);
 
   // Top team's simProb as x-axis max (cap at 20%)
   const xMax = Math.ceil(Math.max(...allTeams.map((t) => t.simProb), 1) + 2);
@@ -110,7 +114,19 @@ export default function ChampionRanking() {
 
   return (
     <div className="panel ranking-panel">
-      <h3>🏆 夺冠概率排名 ({allTeams.length} 队)</h3>
+      <div className="ranking-header">
+        <h3>🏆 夺冠概率排名 ({allTeams.length} 队)</h3>
+        <div className="ranking-btns">
+          {DISPLAY_OPTIONS.map((n) => (
+            <button key={n}
+              className={`chip ${displayCount === n ? "active" : ""}`}
+              onClick={() => setDisplayCount(n)}
+              style={{ fontSize: "0.6rem", padding: "0.1rem 0.35rem" }}>
+              {n === 44 ? "全部" : `Top ${n}`}
+            </button>
+          ))}
+        </div>
+      </div>
       <ReactECharts
         option={option}
         style={{ height: chartHeight, width: "100%" }}
