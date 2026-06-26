@@ -120,8 +120,8 @@ export default function ChampionTrend() {
   const setEventTimeRange = useAppStore((s) => s.setEventTimeRange);
   const eventTimeRange = useAppStore((s) => s.eventTimeRange);
 
-  const [chartHeight, setChartHeight] = useState(600);
-  const HEIGHT_PRESETS = [400, 600, 720, 900];
+  const [chartHeight, setChartHeight] = useState(800);
+  const HEIGHT_PRESETS = [400, 500, 600, 700, 800, 900];
 
   const teamIds = Object.keys(oddsTrends);
 
