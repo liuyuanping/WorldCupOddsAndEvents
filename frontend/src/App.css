@@ -708,7 +708,10 @@ body {
 
 .search-page-edit {
   width: 420px;
-  overflow-y: auto;
+  min-width: 320px;
+  max-width: 600px;
+  resize: horizontal;
+  overflow: auto;
   padding: 0.75rem;
   background: var(--bg-card);
   border-radius: 6px;
@@ -735,6 +738,10 @@ body {
 
 .search-page-left {
   width: 280px;
+  min-width: 200px;
+  max-width: 450px;
+  resize: horizontal;
+  overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
