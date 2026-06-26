@@ -1,5 +1,5 @@
 /* ── Information Search Page (Full Screen) ───────────── */
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import ReactECharts from "echarts-for-react";
 import { useAppStore } from "../store/useAppStore";
 import { getTeamColor } from "../types";
@@ -73,13 +73,24 @@ export default function SearchPage() {
     }
   };
 
-  // Fetch trend data for selected team
+  // Fetch trend data, sync time inputs once per team load
+  const prevTeamRef = useRef("");
   useEffect(() => {
     if (!searchTeam) return;
+    const teamChanged = prevTeamRef.current !== searchTeam;
+    prevTeamRef.current = searchTeam;
     setTrendLoading(true);
     fetch(`/api/v1/champion/trend?team_ids=${searchTeam}&interval=${computedInterval}&provider=polymarket`)
       .then((r) => r.json())
-      .then((d) => setTrendData(d.series?.[searchTeam]?.data || []))
+      .then((d) => {
+        const pts = d.series?.[searchTeam]?.data || [];
+        setTrendData(pts);
+        // Sync inputs to data range only when team changes
+        if (pts.length > 1 && teamChanged) {
+          setStartTime(pts[0].timestamp.slice(0, 16));
+          setEndTime(pts[pts.length - 1].timestamp.slice(0, 16));
+        }
+      })
       .catch(() => setTrendData([]))
       .finally(() => setTrendLoading(false));
   }, [searchTeam, computedInterval]);
