@@ -700,10 +700,17 @@ body {
 
 .search-page-results {
   flex: 1;
-  overflow-y: auto;
+  min-width: 250px;
+  max-width: 900px;
+  resize: horizontal;
+  overflow: auto;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  padding: 0.5rem;
+  background: var(--bg-card);
+  border-radius: 6px;
+  border: 1px solid var(--border);
 }
 
 .search-page-edit {
