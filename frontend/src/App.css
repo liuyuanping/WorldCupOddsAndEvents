@@ -819,3 +819,16 @@ body {
   flex: 1; padding: 0.2rem; background: var(--bg); color: var(--text);
   border: 1px solid var(--border); border-radius: 3px; font-size: 0.65rem;
 }
+
+.search-conditions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+  padding: 0.3rem 0.4rem;
+  background: var(--bg);
+  border-radius: 4px;
+}
+.search-conditions b { color: var(--text); }

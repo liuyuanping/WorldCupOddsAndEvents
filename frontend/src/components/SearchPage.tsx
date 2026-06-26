@@ -245,6 +245,11 @@ export default function SearchPage() {
         {/* Center: Results */}
         <div className="search-page-results">
           <div className="search-section-title">搜索结果</div>
+          <div className="search-conditions">
+            <span>球队: <b>{searchTeam ? (teams.find(t => t.team_id === searchTeam)?.flag_emoji || "") + " " + (teams.find(t => t.team_id === searchTeam)?.team_name || searchTeam) : "—"}</b></span>
+            <span>时间: <b>{startTime.slice(0, 10)} ~ {endTime.slice(0, 10)}</b></span>
+            <span>{results.length > 0 ? `找到 ${results.length} 条` : ""}</span>
+          </div>
           {results.map((r, i) => (
             <div key={i} className={`search-item ${selected === r ? "selected" : ""}`} onClick={() => selectResult(r)}>
               <div className="search-item-header">
