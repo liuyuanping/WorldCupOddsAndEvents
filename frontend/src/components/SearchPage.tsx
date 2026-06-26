@@ -104,16 +104,16 @@ export default function SearchPage() {
   const teamNames = teams.map((t) => ({ id: t.team_id, name: t.team_name }));
 
   const doSearch = useCallback(async () => {
-    if (selectedTeamIds.size === 0) return;
+    if (!searchTeam) { showToast("请先在左栏选择一支球队"); return; }
     setLoading(true); setResults([]); setSelected(null);
     try {
-      const r = await fetch(`/api/v1/champion/search?team_ids=${[...selectedTeamIds].join(",")}&limit=15`);
+      const r = await fetch(`/api/v1/champion/search?team_ids=${searchTeam}&limit=15`);
       const data = await r.json();
       setResults(data.results || []);
       if (data.results?.length === 0) showToast("未找到相关信息");
     } catch { showToast("搜索失败"); }
     setLoading(false);
-  }, [selectedTeamIds]);
+  }, [searchTeam]);
 
   const selectResult = (r: SearchResult) => {
     setSelected(r);
