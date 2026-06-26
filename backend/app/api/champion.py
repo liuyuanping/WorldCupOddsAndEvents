@@ -1,5 +1,6 @@
 """Championship prediction API routes."""
 import inspect
+import json
 import logging
 import math
 import random
@@ -286,86 +287,102 @@ class AIAnalyzeRequest(BaseModel):
 
 @router.post("/ai-analyze")
 async def ai_analyze(req: AIAnalyzeRequest):
-    """AI analysis: determine trend direction, causes, and generate event."""
-    trend_data = req.trend_data or []
-    search_results = req.search_results or []
+    """AI analysis: use DeepSeek LLM to analyze trend + news → structured event."""
+    from app.config import settings
+    from openai import OpenAI
 
-    # Analyze trend direction
-    trend_direction = "stable"
-    change_pct = 0.0
-    if len(trend_data) >= 2:
-        first_prob = trend_data[0].get("prob", 0) if isinstance(trend_data[0], dict) else 0
-        last_prob = trend_data[-1].get("prob", 0) if isinstance(trend_data[-1], dict) else 0
-        if isinstance(trend_data[0], dict) and isinstance(trend_data[-1], dict):
-            first_prob = trend_data[0].get("prob", 0) or 0
-            last_prob = trend_data[-1].get("prob", 0) or 0
-            if first_prob > 0:
-                change_pct = (last_prob - first_prob) / first_prob * 100
-                if change_pct > 3:
-                    trend_direction = "up"
-                elif change_pct < -3:
-                    trend_direction = "down"
-                else:
-                    trend_direction = "stable"
+    # Prepare trend summary
+    trend_summary = "无趋势数据"
+    if req.trend_data and len(req.trend_data) >= 2:
+        first = req.trend_data[0].get("prob", 0) if isinstance(req.trend_data[0], dict) else 0
+        last = req.trend_data[-1].get("prob", 0) if isinstance(req.trend_data[-1], dict) else 0
+        first_pct = first * 100
+        last_pct = last * 100
+        direction = "上升" if last_pct > first_pct else ("下降" if last_pct < first_pct else "平稳")
+        change = abs(last_pct - first_pct)
+        trend_summary = (
+            f"{req.team_name}夺冠概率从{first_pct:.1f}%变化到{last_pct:.1f}%（{direction}，变动{change:.1f}个百分点）"
+        )
+        if len(req.trend_data) > 2:
+            trend_summary += f"，共{len(req.trend_data)}个数据点"
 
-    # Analyze search results for keywords
-    injury_kws = ["injury", "injured", "hurt", "doubt", "伤", "受伤", "骨折"]
-    good_kws = ["win", "goal", "score", "form", "brilliant", "strong", "胜", "进球", "状态出色"]
-    bad_kws = ["loss", "lose", "defeat", "red card", "suspen", "输", "败", "红牌", "停赛"]
-
-    has_injury = False
-    has_good = False
-    has_bad = False
-    titles = []
-    for r in search_results:
+    # Prepare news summary
+    news_lines = []
+    for r in (req.search_results or []):
         title = r.get("title", "") if isinstance(r, dict) else ""
-        lower = title.lower()
-        if any(k in lower for k in injury_kws):
-            has_injury = True
-        if any(k in lower for k in good_kws):
-            has_good = True
-        if any(k in lower for k in bad_kws):
-            has_bad = True
         if title:
-            titles.append(title[:80])
+            news_lines.append(f"- {title[:120]}")
+    news_summary = "\n".join(news_lines[:5]) or "无相关新闻"
 
-    # Build analysis text
-    direction_text = {"up": "上升", "down": "下降", "stable": "平稳"}[trend_direction]
-    reasons = []
-    if has_injury:
-        reasons.append("出现伤病相关新闻")
-    if has_good:
-        reasons.append("有积极消息")
-    if has_bad:
-        reasons.append("有负面消息")
-    if abs(change_pct) < 3:
-        reasons.append("赔率变动幅度较小")
+    # Build LLM prompt
+    system_prompt = """你是一个专业的足球赛事分析师。你需要根据提供的赔率趋势数据和新闻信息，生成一个结构化的球队事件。
 
-    description = f"AI分析：{req.team_name}近期夺冠概率呈{direction_text}趋势"
-    if abs(change_pct) >= 1:
-        description += f"（变动{change_pct:+.1f}%）"
-    if reasons:
-        description += f"。可能原因：{'、'.join(reasons)}。"
-    if titles:
-        description += f"\n相关新闻：{'、'.join(titles[:3])}"
+请按以下JSON格式回复，必须只返回JSON，不要包含任何其他内容（不要markdown、不要代码块标记）：
+{
+  "title": "事件标题（中文，简洁概括）",
+  "description": "事件描述（中文，包含趋势变化、具体数据、新闻依据，150-300字）",
+  "event_type": "事件类型（只能从以下选一个：injury/squad/form/transfer/manager/record/elimination/upset/suspension/other）",
+  "severity": 严重程度（1-4的整数，1=低 2=中 3=高 4=严重）
+}"""
 
-    title = f"{req.team_name}夺冠概率{trend_direction == 'up' and '上升' or trend_direction == 'down' and '下降' or '平稳'}"
+    user_prompt = f"""请分析以下数据：
 
-    # Determine event type and severity
-    if has_injury:
-        evt_type = "injury"
-        severity = 3
-    elif has_bad:
+【球队】{req.team_name}（{req.team_id}）
+【分析时段】{req.start_time} 至 {req.end_time}
+
+【胜率趋势】
+{trend_summary}
+
+【相关新闻】
+{news_summary}
+
+请分析该球队夺冠概率的变化趋势和原因，生成一个事件。"""
+
+    try:
+        client = OpenAI(
+            api_key=settings.llm_api_key,
+            base_url=settings.llm_base_url,
+        )
+        response = client.chat.completions.create(
+            model=settings.llm_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.3,
+            max_tokens=800,
+        )
+        content = response.choices[0].message.content.strip()
+        # Strip markdown code block if present
+        if content.startswith("```"):
+            content = content.split("\n", 1)[-1]
+            content = content.rsplit("```", 1)[0].strip()
+            if content.startswith("json"):
+                content = content[4:].strip()
+        result = json.loads(content)
+        title = result.get("title", f"{req.team_name}趋势分析")
+        description = result.get("description", "")
+        evt_type = result.get("event_type", "other")
+        severity = int(result.get("severity", 2))
+        severity = max(1, min(4, severity))
+
+    except Exception as e:
+        logger.warning(f"LLM analysis failed, falling back to rule-based: {e}")
+        # Fallback: simple rule-based
+        first_prob = 0
+        last_prob = 0
+        if req.trend_data and len(req.trend_data) >= 2:
+            first_prob = (req.trend_data[0].get("prob", 0) or 0) * 100 if isinstance(req.trend_data[0], dict) else 0
+            last_prob = (req.trend_data[-1].get("prob", 0) or 0) * 100 if isinstance(req.trend_data[-1], dict) else 0
+        direction = "上升" if last_prob > first_prob else ("下降" if last_prob < first_prob else "平稳")
+        title = f"{req.team_name}夺冠概率{direction}"
+        description = f"AI分析：{req.team_name}近期夺冠概率呈{direction}趋势。"
+        if last_prob != first_prob and first_prob > 0:
+            description += f"从{first_prob:.1f}%变动至{last_prob:.1f}%。"
         evt_type = "other"
-        severity = 3
-    elif has_good:
-        evt_type = "form"
-        severity = 2
-    else:
-        evt_type = "other"
         severity = 2
 
-    # Use end_time or current time as event timestamp
+    # Timestamp from end_time
     try:
         event_ts = datetime.fromisoformat(req.end_time.replace("Z", "+00:00")) if req.end_time else datetime.now(timezone.utc)
     except (ValueError, AttributeError):
@@ -376,7 +393,7 @@ async def ai_analyze(req: AIAnalyzeRequest):
         "description": description,
         "event_type": evt_type,
         "severity": severity,
-        "confidence": 0.7,
+        "confidence": 0.85,
         "source_url": "",
         "timestamp": event_ts.isoformat(),
     }
