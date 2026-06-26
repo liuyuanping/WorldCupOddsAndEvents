@@ -322,7 +322,7 @@ export default function SearchPage() {
                       team_name: teamName,
                       event_type: data.event_type || "other",
                       severity: data.severity || 2,
-                      timestamp: new Date().toISOString(),
+                      timestamp: data.timestamp || new Date().toISOString(),
                       confidence: data.confidence || 0.7,
                     });
                     showToast("AI 分析完成，请审查下方结果");
@@ -369,6 +369,9 @@ export default function SearchPage() {
                         setEditDesc(data.description || "");
                         setEditType(data.event_type || "other");
                         setEditSeverity(data.severity || 2);
+                        if (data.timestamp) {
+                          setEditTs(data.timestamp.slice(0, 19));
+                        }
                         showToast("AI 已重新生成，请审查");
                       }
                     } catch { showToast("AI 分析失败"); }

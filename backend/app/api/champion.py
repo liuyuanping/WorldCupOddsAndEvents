@@ -365,6 +365,12 @@ async def ai_analyze(req: AIAnalyzeRequest):
         evt_type = "other"
         severity = 2
 
+    # Use end_time or current time as event timestamp
+    try:
+        event_ts = datetime.fromisoformat(req.end_time.replace("Z", "+00:00")) if req.end_time else datetime.now(timezone.utc)
+    except (ValueError, AttributeError):
+        event_ts = datetime.now(timezone.utc)
+
     return {
         "title": title,
         "description": description,
@@ -372,6 +378,7 @@ async def ai_analyze(req: AIAnalyzeRequest):
         "severity": severity,
         "confidence": 0.7,
         "source_url": "",
+        "timestamp": event_ts.isoformat(),
     }
 
 
