@@ -835,3 +835,15 @@ body {
 
 .edit-ai-btns { display: flex; gap: 0.3rem; margin-bottom: 0.4rem; }
 .search-ai-area { margin: 0.3rem 0; }
+
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 10000;
+}
+.modal-content {
+  background: var(--bg-card); padding: 1.2rem;
+  border-radius: 8px; width: 420px; max-width: 90vw;
+  border: 1px solid var(--border);
+}
+.modal-content h3 { margin-bottom: 0.75rem; }

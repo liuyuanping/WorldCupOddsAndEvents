@@ -287,9 +287,35 @@ class AIAnalyzeRequest(BaseModel):
 
 @router.post("/ai-analyze")
 async def ai_analyze(req: AIAnalyzeRequest):
-    """AI analysis: use DeepSeek LLM to analyze trend + news → structured event."""
-    from app.config import settings
+    """AI analysis: use LLM to analyze trend + news → structured event."""
     from openai import OpenAI
+
+    # Load LLM settings from database
+    llm_key = ""
+    llm_url = "https://api.deepseek.com"
+    llm_model = "deepseek-v4-flash"
+    try:
+        from sqlalchemy import select
+        from app.database import async_session
+        from app.models.champion import TeamEventORM
+
+        async with async_session() as session:
+            for k in ("llm_api_key", "llm_base_url", "llm_model"):
+                stmt = select(TeamEventORM).where(TeamEventORM.provider == "__llm__", TeamEventORM.event_type == k)
+                result = await session.execute(stmt)
+                if row := result.scalar_one_or_none():
+                    val = row.title
+                    if k == "llm_api_key":
+                        llm_key = val
+                    elif k == "llm_base_url":
+                        llm_url = val or "https://api.deepseek.com"
+                    elif k == "llm_model":
+                        llm_model = val or "deepseek-v4-flash"
+    except Exception as e:
+        logger.warning(f"Failed to load LLM settings from DB: {e}")
+
+    if not llm_key:
+        return {"error": "请先在设置页面配置 LLM API Key", "title": "", "description": "", "event_type": "other", "severity": 1, "confidence": 0, "source_url": "", "timestamp": datetime.now(timezone.utc).isoformat()}
 
     # Prepare trend summary
     trend_summary = "无趋势数据"
@@ -339,12 +365,9 @@ async def ai_analyze(req: AIAnalyzeRequest):
 请分析该球队夺冠概率的变化趋势和原因，生成一个事件。"""
 
     try:
-        client = OpenAI(
-            api_key=settings.llm_api_key,
-            base_url=settings.llm_base_url,
-        )
+        client = OpenAI(api_key=llm_key, base_url=llm_url)
         response = client.chat.completions.create(
-            model=settings.llm_model,
+            model=llm_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -397,6 +420,62 @@ async def ai_analyze(req: AIAnalyzeRequest):
         "source_url": "",
         "timestamp": event_ts.isoformat(),
     }
+
+
+# ── LLM Settings ─────────────────────────────────────
+
+@router.get("/llm-settings")
+async def get_llm_settings():
+    """Get current LLM configuration (key masked)."""
+    from sqlalchemy import select
+    from app.database import async_session
+    from app.models.champion import TeamEventORM
+
+    result = {"base_url": "https://api.deepseek.com", "model": "deepseek-v4-flash", "has_key": False}
+    async with async_session() as session:
+        for k in ("llm_api_key", "llm_base_url", "llm_model"):
+            stmt = select(TeamEventORM).where(TeamEventORM.provider == "__llm__", TeamEventORM.event_type == k)
+            row = (await session.execute(stmt)).scalar_one_or_none()
+            if row:
+                if k == "llm_api_key":
+                    result["has_key"] = bool(row.title)
+                elif k == "llm_base_url":
+                    result["base_url"] = row.title or "https://api.deepseek.com"
+                elif k == "llm_model":
+                    result["model"] = row.title or "deepseek-v4-flash"
+    return result
+
+
+class LLMSettingsRequest(BaseModel):
+    api_key: str = ""
+    base_url: str = "https://api.deepseek.com"
+    model: str = "deepseek-v4-flash"
+
+
+@router.post("/llm-settings")
+async def set_llm_settings(req: LLMSettingsRequest):
+    """Save LLM configuration to database."""
+    from sqlalchemy import select
+    from app.database import async_session
+    from app.models.champion import TeamEventORM
+    from datetime import timezone
+
+    async with async_session() as s:
+        now = datetime.now(timezone.utc)
+        for key, val in [("llm_api_key", req.api_key), ("llm_base_url", req.base_url), ("llm_model", req.model)]:
+            stmt = select(TeamEventORM).where(TeamEventORM.provider == "__llm__", TeamEventORM.event_type == key)
+            row = (await s.execute(stmt)).scalar_one_or_none()
+            if row:
+                row.title = val
+            else:
+                s.add(TeamEventORM(
+                    provider="__llm__", source_id=f"llm_{key}",
+                    team_id="__system__", team_name="System",
+                    event_type=key, title=val, description="",
+                    timestamp=now,
+                ))
+        await s.commit()
+    return {"status": "ok"}
 
 
 # ── Monte Carlo Champion Prediction ───────────────────

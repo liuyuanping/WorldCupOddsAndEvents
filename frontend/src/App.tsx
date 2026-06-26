@@ -5,6 +5,7 @@ import ChampionTrend from "./components/ChampionTrend";
 import ChampionEvents from "./components/ChampionEvents";
 import TeamSelector from "./components/TeamSelector";
 import SearchPage from "./components/SearchPage";
+import LLMSettings from "./components/LLMSettings";
 import Toast from "./components/Toast";
 import "./App.css";
 
@@ -18,6 +19,7 @@ export default function App() {
   const setDataProvider = useAppStore((s) => s.setDataProvider);
   const onlineMode = useAppStore((s) => s.onlineMode);
   const toggleOnlineMode = useAppStore((s) => s.toggleOnlineMode);
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => { loadTeams(); loadEvents(); }, [dataProvider]);
   useEffect(() => {
@@ -43,6 +45,8 @@ export default function App() {
               <button className={`refresh-toggle ${onlineMode ? "active" : ""}`} onClick={toggleOnlineMode}>
                 {onlineMode ? "🔄 刷新中" : "💾 缓存"}
               </button>
+              <button className="action-btn" onClick={() => setShowSettings(true)}
+                style={{ fontSize: "0.75rem" }} title="AI 设置">⚙️</button>
             </>
           )}
           <button className="nav-btn" onClick={() => setPage(page === "dashboard" ? "search" : "dashboard")}>
@@ -61,6 +65,7 @@ export default function App() {
         <SearchPage />
       )}
       <Toast />
+      {showSettings && <LLMSettings onClose={() => setShowSettings(false)} />}
     </div>
   );
 }

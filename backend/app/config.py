@@ -22,11 +22,6 @@ class Settings(BaseSettings):
     # Data
     data_dir: Path = Path("./data")
 
-    # AI / LLM
-    llm_api_key: str = "sk-1669f14c221b42fe90f64e51494c60d2"
-    llm_base_url: str = "https://api.deepseek.com"
-    llm_model: str = "deepseek-v4-flash"
-
     model_config = {"env_prefix": "OEC_", "extra": "allow"}
 
 
