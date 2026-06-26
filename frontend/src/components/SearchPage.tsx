@@ -26,6 +26,7 @@ export default function SearchPage() {
   const now = new Date();
   const defStart = new Date(now.getTime() - 2592000000).toISOString().slice(0, 16);
   const defEnd = now.toISOString().slice(0, 16);
+  const zoomLockRef = useRef(false);
   const [searchTeam, setSearchTeam] = useState("");
   const [timeBase, setTimeBase] = useState<"now" | "start">("now");
   const [startTime, setStartTime] = useState(defStart);
@@ -77,6 +78,8 @@ export default function SearchPage() {
   const prevTeamRef = useRef("");
   useEffect(() => {
     if (!searchTeam) return;
+    // Don't re-fetch when zooming — only update inputs
+    if (zoomLockRef.current) { zoomLockRef.current = false; return; }
     const teamChanged = prevTeamRef.current !== searchTeam;
     prevTeamRef.current = searchTeam;
     setTrendLoading(true);
@@ -238,10 +241,20 @@ export default function SearchPage() {
                   notMerge={true}
                   onEvents={{
                     dataZoom: (params: any) => {
+                      zoomLockRef.current = true;
                       const batch = params.batch?.[0] || params;
                       if (batch.startValue != null && batch.endValue != null) {
                         setStartTime(new Date(batch.startValue).toISOString().slice(0, 16));
                         setEndTime(new Date(batch.endValue).toISOString().slice(0, 16));
+                      } else if (batch.start != null && batch.end != null && trendData.length > 0) {
+                        const idxS = Math.floor(batch.start / 100 * trendData.length);
+                        const idxE = Math.ceil(batch.end / 100 * trendData.length);
+                        const s = trendData[Math.max(0, idxS)];
+                        const e = trendData[Math.min(trendData.length - 1, idxE)];
+                        if (s && e) {
+                          setStartTime(s.timestamp.slice(0, 16));
+                          setEndTime(e.timestamp.slice(0, 16));
+                        }
                       }
                     },
                   }}
