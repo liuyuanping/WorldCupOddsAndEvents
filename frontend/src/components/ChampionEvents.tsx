@@ -14,6 +14,8 @@ export default function ChampionEvents() {
   const selectedEventTypes = useAppStore((s) => s.selectedEventTypes);
   const toggleEventType = useAppStore((s) => s.toggleEventType);
   const eventTimeRange = useAppStore((s) => s.eventTimeRange);
+  const eventDataProvider = useAppStore((s) => s.eventDataProvider);
+  const setEventDataProvider = useAppStore((s) => s.setEventDataProvider);
 
   // Filter events for selected teams only
   const filteredEvents = useMemo(() => {
